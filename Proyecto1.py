@@ -16,7 +16,7 @@ def DELETE_DATABASE(tx):
     """
     tx.run(query)
 
-def create_user(tx, id_usuario, userName, isInfluencer = False, edad = random.randint(18, 60)):
+def create_user(tx, id_usuario, userName, isInfluencer = False, edad = random.randint(18, 60), password="1234"):
 
     if isInfluencer:
         verificado = random.random() < 0.5
@@ -32,7 +32,8 @@ def create_user(tx, id_usuario, userName, isInfluencer = False, edad = random.ra
         fecha_registro: date("{date.today() - timedelta(days=random.randint(1, 365))}"),
         foto_de_perfil: "https://thispersondoesnotexist.com/",
         user_name: "{userName}",
-        verificado: {verificado}
+        verificado: {verificado},
+        pass: "{password}"
       }}      
     )
     RETURN u
@@ -145,16 +146,16 @@ driver = GraphDatabase.driver(URI, auth=AUTH)
 
 with driver.session(database="neo4j") as session:
 
-    # # Descomentar si se quiere borrar la base de datos
-    # session.execute_write(DELETE_DATABASE)
+    # Descomentar si se quiere borrar la base de datos
+    session.execute_write(DELETE_DATABASE)
 
-    # for i in range(1, 20):
-    #     nombre = fake.name()
-    #     isInfluencer = random.random() < 0.3
-    #     session.execute_write(lambda tx: create_user(tx, i, nombre.replace(" ", ""), isInfluencer))
+    for i in range(1, 20):
+        nombre = fake.name()
+        isInfluencer = random.random() < 0.3
+        session.execute_write(lambda tx: create_user(tx, i, nombre.replace(" ", ""), isInfluencer))
 
-    # session.execute_write(create_relation_SIGUE_A)
-    # session.execute_write(create_relation_BLOQUEA)
+    session.execute_write(create_relation_SIGUE_A)
+    session.execute_write(create_relation_BLOQUEA)
     pass
 
     
