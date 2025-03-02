@@ -40,6 +40,41 @@ def create_user(tx, id_usuario, userName, isInfluencer = False, edad = random.ra
     """
     tx.run(query)
 
+def create_mensaje(tx, id_mensaje, texto):
+    fecha_envio = f"date('{date.today() - timedelta(days=random.randint(1, 30))}')"
+    estado = random.choice(["enviado", "entregado"])
+    adjunto = "" if random.random() < 0.7 else "https://example.com/attachment.jpg"
+
+    query = f"""
+    CREATE (m:Mensaje {{
+        id_mensaje: {id_mensaje},
+        texto: "{texto}",
+        fecha_envio: {fecha_envio},
+        estado: "{estado}",
+        adjunto: "{adjunto}"
+    }})
+    RETURN m
+    """
+    tx.run(query)
+
+
+def create_grupo(tx, id_grupo, nombre):
+    fecha_creacion = f"date('{date.today() - timedelta(days=random.randint(1, 365))}')"
+    descripcion = fake.sentence()
+    foto_grupo = "https://example.com/group.jpg"
+
+    query = f"""
+    CREATE (g:Grupo {{
+        id_grupo: {id_grupo},
+        nombre: "{nombre}",
+        fecha_creacion: {fecha_creacion},
+        descripcion: "{descripcion}",
+        foto_grupo: "{foto_grupo}"
+    }})
+    RETURN g
+    """
+    tx.run(query)
+
 import random
 from datetime import date, timedelta
 
@@ -137,10 +172,44 @@ def create_relation_BLOQUEA(tx):
                     tx.run(query_eliminar_sigue_B_A, id1=id_usuario, id2=bloqueado)
 
 
+def create_relation_ESCRIBIO_MENSAJE(tx):
+    query = """
+    MATCH (u:Usuario), (m:Mensaje)
+    WHERE rand() < 0.7
+    MERGE (u)-[:ESCRIBIO_MENSAJE {
+        escrito_a_las: m.fecha_envio,
+        enviado: true,
+        editado: rand() < 0.3
+    }]->(m)
+    """
+    tx.run(query)
 
 
+def create_relation_FUE_ENVIADO_A(tx):
+    query = """
+    MATCH (m:Mensaje), (u:Usuario)
+    WHERE rand() < 0.5
+    MERGE (m)-[r:FUE_ENVIADO_A]->(u)
+    SET r.Fecha_envio = m.fecha_envio,
+        r.Leido = rand() < 0.6
+    WITH r, rand() < 0.6 AS has_read
+    FOREACH (_ IN CASE WHEN has_read THEN [1] ELSE [] END |
+        SET r.fecha_de_lectura = r.Fecha_envio
+    )
+    """
+    tx.run(query)
 
-
+def create_relation_ES_INTEGRANTE_DE(tx):
+    query = """
+    MATCH (u:Usuario), (g:Grupo)
+    WHERE rand() < 0.5
+    MERGE (u)-[:ES_INTEGRANTE_DE {
+        Fecha_de_ingreso: date(),
+        Rol: CASE WHEN rand() < 0.1 THEN "Admin" ELSE "Miembro" END,
+        Silenciado: rand() < 0.3
+    }]->(g)
+    """
+    tx.run(query)
 
 driver = GraphDatabase.driver(URI, auth=AUTH)
 
@@ -156,8 +225,17 @@ with driver.session(database="neo4j") as session:
 
     session.execute_write(create_relation_SIGUE_A)
     session.execute_write(create_relation_BLOQUEA)
-    pass
 
-    
+    for i in range(1, 50):
+        texto = fake.sentence()
+        session.execute_write(lambda tx: create_mensaje(tx, i, texto))
+
+    for i in range(1, 10):
+        nombre = fake.company()
+        session.execute_write(lambda tx: create_grupo(tx, i, nombre))
+
+    session.execute_write(create_relation_ESCRIBIO_MENSAJE)
+    session.execute_write(create_relation_FUE_ENVIADO_A)
+    session.execute_write(create_relation_ES_INTEGRANTE_DE)
 
 driver.close()
