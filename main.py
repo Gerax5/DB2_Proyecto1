@@ -44,6 +44,43 @@ class RelationSIGUEA(BaseModel):
     notificaciones_activas: bool = True
     recomendado_por_algoritmo: bool = False
 
+class MensajeCreate(BaseModel):
+    id_mensaje: int
+    texto: str
+    fecha_envio: date
+    estado: str
+    adjunto: str = None
+
+class GrupoCreate(BaseModel):
+    id_grupo: int
+    nombre: str
+    fecha_creacion: date
+    miembros: list
+    descripcion: str
+    foto_grupo: str
+
+class RelationEscribioMensaje(BaseModel):
+    id_usuario: int
+    id_mensaje: int
+    escrito_a_las: date
+    enviado: bool
+    editado: bool
+
+class RelationFueEnviadoA(BaseModel):
+    id_mensaje: int
+    id_usuario: int
+    fecha_envio: date
+    leido: bool
+    fecha_de_lectura: date = None
+
+class RelationEsIntegranteDe(BaseModel):
+    id_usuario: int
+    id_grupo: int
+    fecha_de_ingreso: date
+    rol: str
+    silenciado: bool
+
+
 # ----------------- FUNCIONES PARA NEO4J -----------------
 def check_user(tx, user_name, password):
     query = """
@@ -76,7 +113,7 @@ def get_following(user_name: str):
     with driver.session(database="neo4j") as session:
         results = session.run(query, user_name=user_name)
         following = [{"user_name": record["user_name"], "foto": record["foto"]} for record in results]
-    
+
     if not following:
         return {"message": "No sigues a nadie."}
     
@@ -136,6 +173,66 @@ def create_relation_bloquea(tx, id1, id2):
     """
     tx.run(query, id1=id1, id2=id2)
 
+def create_mensaje(tx, id_mensaje, texto, fecha_envio, estado, adjunto):
+    query = """
+    CREATE (m:Mensaje {
+        id_mensaje: $id_mensaje,
+        texto: $texto,
+        fecha_envio: $fecha_envio,
+        estado: $estado,
+        adjunto: $adjunto
+    })
+    RETURN m
+    """
+    tx.run(query, id_mensaje=id_mensaje, texto=texto, fecha_envio=fecha_envio, estado=estado, adjunto=adjunto)
+
+def create_grupo(tx, id_grupo, nombre, fecha_creacion, miembros, descripcion, foto_grupo):
+    query = """
+    CREATE (g:Grupo {
+        id_grupo: $id_grupo,
+        nombre: $nombre,
+        fecha_creacion: $fecha_creacion,
+        miembros: $miembros,
+        descripcion: $descripcion,
+        foto_grupo: $foto_grupo
+    })
+    RETURN g
+    """
+    tx.run(query, id_grupo=id_grupo, nombre=nombre, fecha_creacion=fecha_creacion, miembros=miembros, descripcion=descripcion, foto_grupo=foto_grupo)
+
+def get_all_mensajes(tx):
+    query = "MATCH (m:Mensaje) RETURN m.id_mensaje AS id_mensaje, m.texto AS texto, m.fecha_envio AS fecha_envio, m.estado AS estado, m.adjunto AS adjunto"
+    return tx.run(query).data()
+
+def get_all_grupos(tx):
+    query = "MATCH (g:Grupo) RETURN g.id_grupo AS id_grupo, g.nombre AS nombre, g.fecha_creacion AS fecha_creacion, g.descripcion AS descripcion, g.foto_grupo AS foto_grupo"
+    return tx.run(query).data()
+
+def create_relation_escribio_mensaje(tx, id_usuario, id_mensaje, escrito_a_las, enviado, editado):
+    query = """
+    MATCH (u:Usuario {id_usuario: $id_usuario}), (m:Mensaje {id_mensaje: $id_mensaje})
+    MERGE (u)-[:ESCRIBIO_MENSAJE {escrito_a_las: $escrito_a_las, enviado: $enviado, editado: $editado}]->(m)
+    RETURN u, m
+    """
+    tx.run(query, id_usuario=id_usuario, id_mensaje=id_mensaje, escrito_a_las=escrito_a_las, enviado=enviado, editado=editado)
+
+def create_relation_fue_enviado_a(tx, id_mensaje, id_usuario, fecha_envio, leido, fecha_de_lectura):
+    query = """
+    MATCH (m:Mensaje {id_mensaje: $id_mensaje}), (u:Usuario {id_usuario: $id_usuario})
+    MERGE (m)-[:FUE_ENVIADO_A {fecha_envio: $fecha_envio, leido: $leido, fecha_de_lectura: $fecha_de_lectura}]->(u)
+    RETURN m, u
+    """
+    tx.run(query, id_mensaje=id_mensaje, id_usuario=id_usuario, fecha_envio=fecha_envio, leido=leido, fecha_de_lectura=fecha_de_lectura)
+
+def create_relation_es_integrante_de(tx, id_usuario, id_grupo, fecha_de_ingreso, rol, silenciado):
+    query = """
+    MATCH (u:Usuario {id_usuario: $id_usuario}), (g:Grupo {id_grupo: $id_grupo})
+    MERGE (u)-[:ES_INTEGRANTE_DE {fecha_de_ingreso: $fecha_de_ingreso, rol: $rol, silenciado: $silenciado}]->(g)
+    RETURN u, g
+    """
+    tx.run(query, id_usuario=id_usuario, id_grupo=id_grupo, fecha_de_ingreso=fecha_de_ingreso, rol=rol, silenciado=silenciado)
+
+
 # ----------------- ENDPOINTS -----------------
 
 @app.post("/users/")
@@ -178,3 +275,44 @@ def block_user(relation: RelationCreate):
         session.execute_write(create_relation_bloquea, relation.id1, relation.id2)
         return {"message": f"Usuario {relation.id1} bloqueó a {relation.id2}"}
     
+@app.get("/mensajes/")
+def get_mensajes():
+    with driver.session(database="neo4j") as session:
+        mensajes = session.execute_read(get_all_mensajes)
+        return mensajes if mensajes else {"message": "No hay mensajes disponibles."}
+
+@app.get("/grupos/")
+def get_grupos():
+    with driver.session(database="neo4j") as session:
+        grupos = session.execute_read(get_all_grupos)
+        return grupos if grupos else {"message": "No hay grupos disponibles."}
+
+@app.post("/mensajes/")
+def create_mensaje_api(mensaje: MensajeCreate):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(create_mensaje, mensaje.id_mensaje, mensaje.texto, mensaje.fecha_envio, mensaje.estado, mensaje.adjunto)
+        return {"message": "Mensaje creado", "id_mensaje": mensaje.id_mensaje}
+
+@app.post("/grupos/")
+def create_grupo_api(grupo: GrupoCreate):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(create_grupo, grupo.id_grupo, grupo.nombre, grupo.fecha_creacion, grupo.miembros, grupo.descripcion, grupo.foto_grupo)
+        return {"message": "Grupo creado", "id_grupo": grupo.id_grupo}
+
+@app.post("/relations/escribio_mensaje/")
+def escribio_mensaje(relation: RelationEscribioMensaje):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(create_relation_escribio_mensaje, relation.id_usuario, relation.id_mensaje, relation.escrito_a_las, relation.enviado, relation.editado)
+        return {"message": f"Usuario {relation.id_usuario} escribió el mensaje {relation.id_mensaje}"}
+
+@app.post("/relations/fue_enviado_a/")
+def fue_enviado_a(relation: RelationFueEnviadoA):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(create_relation_fue_enviado_a, relation.id_mensaje, relation.id_usuario, relation.fecha_envio, relation.leido, relation.fecha_de_lectura)
+        return {"message": f"Mensaje {relation.id_mensaje} fue enviado a usuario {relation.id_usuario}"}
+
+@app.post("/relations/es_integrante_de/")
+def es_integrante_de(relation: RelationEsIntegranteDe):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(create_relation_es_integrante_de, relation.id_usuario, relation.id_grupo, relation.fecha_de_ingreso, relation.rol, relation.silenciado)
+        return {"message": f"Usuario {relation.id_usuario} se unió al grupo {relation.id_grupo} como {relation.rol}"}
