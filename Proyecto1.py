@@ -75,6 +75,33 @@ def create_grupo(tx, id_grupo, nombre):
     """
     tx.run(query)
 
+
+def create_comentario(tx, id_comentario, titulo, contenido, fecha, likes):
+    query = f"""
+    CREATE (c:Comentario {{
+        id_comentario: {id_comentario},
+        titulo: "{titulo}",
+        contenido: "{contenido}",
+        fecha: date("{fecha}"),
+        likes: {likes}
+    }})
+    RETURN c
+    """
+    tx.run(query)
+
+
+def create_publicacion(tx, id_publicacion, texto, fecha, reacciones):
+    query = f"""
+    CREATE (p:Publicacion {{
+        id_publicacion: {id_publicacion},
+        texto: "{texto}",
+        fecha: date("{fecha}"),
+        reacciones: {reacciones}
+    }})
+    RETURN p
+    """
+    tx.run(query)
+
 import random
 from datetime import date, timedelta
 
@@ -211,6 +238,38 @@ def create_relation_ES_INTEGRANTE_DE(tx):
     """
     tx.run(query)
 
+
+def create_relation_COMPARTE(tx):
+    query = """
+    MATCH (u:Usuario), (p:Publicacion)
+    WHERE rand() < 0.3
+    MERGE (u)-[:COMPARTE {
+        fecha_compartido: date()
+    }]->(p)
+    """
+    tx.run(query)
+
+
+def create_relation_COMENTA(tx):
+    query = """
+    MATCH (u:Usuario), (c:Comentario)
+    WHERE rand() < 0.4
+    MERGE (u)-[:COMENTA {
+        fecha_comentario: date()
+    }]->(c)
+    """
+    tx.run(query)
+
+
+def create_relation_PERTENECE_A(tx):
+    query = """
+    MATCH (c:Comentario), (p:Publicacion)
+    WHERE rand() < 0.7
+    MERGE (c)-[:PERTENECE_A]->(p)
+    """
+    tx.run(query)
+
+
 driver = GraphDatabase.driver(URI, auth=AUTH)
 
 with driver.session(database="neo4j") as session:
@@ -237,5 +296,35 @@ with driver.session(database="neo4j") as session:
     session.execute_write(create_relation_ESCRIBIO_MENSAJE)
     session.execute_write(create_relation_FUE_ENVIADO_A)
     session.execute_write(create_relation_ES_INTEGRANTE_DE)
+
+    # Creación de Publicaciones y Comentarios
+    for i in range(1, 10):
+        texto_publicacion = fake.sentence()
+        fecha_publicacion = date.today() - timedelta(days=random.randint(1, 30))
+        reacciones = random.randint(0, 100)
+        session.execute_write(
+            lambda tx: create_publicacion(tx, i, texto_publicacion, fecha_publicacion, reacciones)
+        )
+
+    for i in range(1, 15):
+        titulo_comentario = fake.sentence(nb_words=3)
+        contenido_comentario = fake.paragraph(nb_sentences=2)
+        fecha_comentario = date.today() - timedelta(days=random.randint(1, 30))
+        likes = random.randint(0, 50)
+        session.execute_write(
+            lambda tx: create_comentario(
+                tx, 
+                i, 
+                titulo_comentario, 
+                contenido_comentario, 
+                fecha_comentario, 
+                likes
+            )
+        )
+
+    # Relaciones para publicaciones y comentarios
+    session.execute_write(create_relation_COMPARTE)
+    session.execute_write(create_relation_COMENTA)
+    session.execute_write(create_relation_PERTENECE_A)
 
 driver.close()

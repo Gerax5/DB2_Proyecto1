@@ -80,6 +80,33 @@ class RelationEsIntegranteDe(BaseModel):
     rol: str
     silenciado: bool
 
+class PublicacionCreate(BaseModel):
+    id_publicacion: int
+    texto: str
+    fecha: date
+    reacciones: int
+
+class ComentarioCreate(BaseModel):
+    id_comentario: int
+    titulo: str
+    contenido: str
+    fecha: date
+    likes: int
+
+class RelationComparte(BaseModel):
+    id_usuario: int
+    id_publicacion: int
+    fecha_compartido: date = date.today()
+
+class RelationComenta(BaseModel):
+    id_usuario: int
+    id_comentario: int
+    fecha_comentario: date = date.today()
+
+class RelationPerteneceA(BaseModel):
+    id_comentario: int
+    id_publicacion: int
+
 
 # ----------------- FUNCIONES PARA NEO4J -----------------
 def check_user(tx, user_name, password):
@@ -232,6 +259,76 @@ def create_relation_es_integrante_de(tx, id_usuario, id_grupo, fecha_de_ingreso,
     """
     tx.run(query, id_usuario=id_usuario, id_grupo=id_grupo, fecha_de_ingreso=fecha_de_ingreso, rol=rol, silenciado=silenciado)
 
+def create_publicacion_func(tx, id_publicacion, texto, fecha, reacciones):
+    query = """
+    CREATE (p:Publicacion {
+        id_publicacion: $id_publicacion,
+        texto: $texto,
+        fecha: $fecha,
+        reacciones: $reacciones
+    })
+    RETURN p
+    """
+    tx.run(query,
+           id_publicacion=id_publicacion,
+           texto=texto,
+           fecha=fecha,
+           reacciones=reacciones)
+
+def create_comentario_func(tx, id_comentario, titulo, contenido, fecha, likes):
+    query = """
+    CREATE (c:Comentario {
+        id_comentario: $id_comentario,
+        titulo: $titulo,
+        contenido: $contenido,
+        fecha: $fecha,
+        likes: $likes
+    })
+    RETURN c
+    """
+    tx.run(query,
+           id_comentario=id_comentario,
+           titulo=titulo,
+           contenido=contenido,
+           fecha=fecha,
+           likes=likes)
+
+def create_relation_comparte(tx, id_usuario, id_publicacion, fecha_compartido):
+    query = """
+    MATCH (u:Usuario {id_usuario: $id_usuario}), (p:Publicacion {id_publicacion: $id_publicacion})
+    MERGE (u)-[:COMPARTE {
+        fecha_compartido: $fecha_compartido
+    }]->(p)
+    RETURN u, p
+    """
+    tx.run(query, 
+           id_usuario=id_usuario,
+           id_publicacion=id_publicacion,
+           fecha_compartido=fecha_compartido)
+
+def create_relation_comenta(tx, id_usuario, id_comentario, fecha_comentario):
+    query = """
+    MATCH (u:Usuario {id_usuario: $id_usuario}), (c:Comentario {id_comentario: $id_comentario})
+    MERGE (u)-[:COMENTA {
+        fecha_comentario: $fecha_comentario
+    }]->(c)
+    RETURN u, c
+    """
+    tx.run(query, 
+           id_usuario=id_usuario,
+           id_comentario=id_comentario,
+           fecha_comentario=fecha_comentario)
+
+def create_relation_pertenece_a(tx, id_comentario, id_publicacion):
+    query = """
+    MATCH (c:Comentario {id_comentario: $id_comentario}), (p:Publicacion {id_publicacion: $id_publicacion})
+    MERGE (c)-[:PERTENECE_A]->(p)
+    RETURN c, p
+    """
+    tx.run(query, 
+           id_comentario=id_comentario,
+           id_publicacion=id_publicacion)
+
 
 # ----------------- ENDPOINTS -----------------
 
@@ -316,3 +413,60 @@ def es_integrante_de(relation: RelationEsIntegranteDe):
     with driver.session(database="neo4j") as session:
         session.execute_write(create_relation_es_integrante_de, relation.id_usuario, relation.id_grupo, relation.fecha_de_ingreso, relation.rol, relation.silenciado)
         return {"message": f"Usuario {relation.id_usuario} se unió al grupo {relation.id_grupo} como {relation.rol}"}
+
+@app.post("/publicaciones/")
+def create_publicacion_api(pub: PublicacionCreate):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(
+            create_publicacion_func,
+            pub.id_publicacion,
+            pub.texto,
+            pub.fecha,
+            pub.reacciones
+        )
+        return {"message": "Publicación creada", "id_publicacion": pub.id_publicacion}
+
+@app.post("/comentarios/")
+def create_comentario_api(comment: ComentarioCreate):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(
+            create_comentario_func,
+            comment.id_comentario,
+            comment.titulo,
+            comment.contenido,
+            comment.fecha,
+            comment.likes
+        )
+        return {"message": "Comentario creado", "id_comentario": comment.id_comentario}
+
+@app.post("/relations/comparte/")
+def create_comparte_api(rel: RelationComparte):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(
+            create_relation_comparte,
+            rel.id_usuario,
+            rel.id_publicacion,
+            rel.fecha_compartido
+        )
+        return {"message": f"Usuario {rel.id_usuario} compartió la publicación {rel.id_publicacion}"}
+
+@app.post("/relations/comenta/")
+def create_comenta_api(rel: RelationComenta):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(
+            create_relation_comenta,
+            rel.id_usuario,
+            rel.id_comentario,
+            rel.fecha_comentario
+        )
+        return {"message": f"Usuario {rel.id_usuario} comentó el comentario {rel.id_comentario}"}
+
+@app.post("/relations/pertenece_a/")
+def create_pertenece_a_api(rel: RelationPerteneceA):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(
+            create_relation_pertenece_a,
+            rel.id_comentario,
+            rel.id_publicacion
+        )
+        return {"message": f"Comentario {rel.id_comentario} pertenece a la publicación {rel.id_publicacion}"}
