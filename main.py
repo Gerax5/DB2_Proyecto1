@@ -33,6 +33,10 @@ class LoginRequest(BaseModel):
 class UserCreate(BaseModel):
     user_name: str
     is_influencer: bool
+    email: str
+    password: str
+    age: int
+    profile_pic: str
 
 class RelationCreate(BaseModel):
     id1: int
@@ -65,6 +69,14 @@ class RelationEscribioMensaje(BaseModel):
     escrito_a_las: date
     enviado: bool
     editado: bool
+
+class GrupoPublicacionRelation(BaseModel):
+    id_grupo: int
+    id_publicacion: int
+    fecha_agregado: date
+    agregado_por: int
+    categoria: str
+    relevancia: float
 
 class RelationFueEnviadoA(BaseModel):
     id_mensaje: int
@@ -109,6 +121,19 @@ class RelationPerteneceA(BaseModel):
 
 
 # ----------------- FUNCIONES PARA NEO4J -----------------
+def create_relation_contiene_publicacion(tx, id_grupo, id_publicacion, fecha_agregado, agregado_por, categoria, relevancia):
+    """Crea una relación CONTIENE_PUBLICACION entre Grupo y Publicación"""
+    query = """
+    MATCH (g:Grupo {id_grupo: $id_grupo}), (p:Publicacion {id_publicacion: $id_publicacion})
+    MERGE (g)-[r:CONTIENE_PUBLICACION]->(p)
+    SET r.fecha_agregado = $fecha_agregado,
+        r.agregado_por = $agregado_por,
+        r.categoria = $categoria,
+        r.relevancia = $relevancia
+    RETURN g, p, r
+    """
+    tx.run(query, id_grupo=id_grupo, id_publicacion=id_publicacion, fecha_agregado=fecha_agregado, agregado_por=agregado_por, categoria=categoria, relevancia=relevancia)
+
 def check_user(tx, user_name, password):
     query = """
     MATCH (u:Usuario {user_name: $user_name, pass: $password})
@@ -148,17 +173,35 @@ def get_following(user_name: str):
 
 @app.get("/recommendations/{user_name}")
 def get_recommendations(user_name: str):
-    query = """
-    MATCH (u:Usuario {user_name: $user_name})
-    MATCH (sugerido:Usuario) WHERE NOT (u)-[:SIGUE_A]->(sugerido) AND sugerido <> u
-    RETURN sugerido.user_name AS user_name, sugerido.foto_de_perfil AS foto, sugerido.id_usuario AS id_usuario
-    LIMIT 5
-    """
     with driver.session(database="neo4j") as session:
+        # Verificar si el usuario sigue a alguien
+        query_following = """
+        MATCH (u:Usuario {user_name: $user_name})-[:SIGUE_A]->(s:Usuario)
+        RETURN s.id_usuario AS id_usuario
+        """
+        following_users = [record["id_usuario"] for record in session.run(query_following, user_name=user_name)]
+
+        if following_users:
+            # Buscar usuarios seguidos por las personas que sigo (pero que yo no sigo aún)
+            query = """
+            MATCH (me:Usuario {user_name: $user_name})-[:SIGUE_A]->(s:Usuario)-[:SIGUE_A]->(rec:Usuario)
+            WHERE NOT (me)-[:SIGUE_A]->(rec) AND rec <> me
+            RETURN DISTINCT rec.user_name AS user_name, rec.foto_de_perfil AS foto, rec.id_usuario AS id_usuario
+            LIMIT 5
+            """
+        else:
+            # Si no sigue a nadie, mostrar recomendaciones aleatorias
+            query = """
+            MATCH (rec:Usuario) WHERE rec.user_name <> $user_name
+            RETURN rec.user_name AS user_name, rec.foto_de_perfil AS foto, rec.id_usuario AS id_usuario
+            ORDER BY rand() LIMIT 5
+            """
+
         results = session.run(query, user_name=user_name)
         recommendations = [{"user_name": record["user_name"], "foto": record["foto"], "id_usuario": record["id_usuario"]} for record in results]
-    
-    return recommendations if recommendations else {"message": "No hay recomendaciones disponibles."}
+
+        return recommendations if recommendations else {"message": "No hay recomendaciones disponibles."}
+
 
 
 def create_user(tx, id_usuario, user_name, email, password, is_influencer, age, profile_pic):
@@ -342,8 +385,14 @@ def create_user_api(user: UserCreate):
 @app.post("/signup/")
 def signup(user: UserCreate):
     with driver.session(database="neo4j") as session:
-        user_id = random.randint(1, 1000)  # Asignar un ID único
+        # Obtener el último ID de usuario registrado
+        result = session.run("MATCH (u:Usuario) RETURN COALESCE(MAX(u.id_usuario), 0) AS last_id")
+        last_id = result.single()["last_id"]
+        user_id = last_id + 1
+
+        # Crear usuario en la base de datos
         session.execute_write(create_user, user_id, user.user_name, user.email, user.password, user.is_influencer, user.age, user.profile_pic)
+        
         return {"message": "Usuario creado exitosamente", "id_usuario": user_id}
 
 @app.get("/users/")
@@ -414,6 +463,78 @@ def es_integrante_de(relation: RelationEsIntegranteDe):
         session.execute_write(create_relation_es_integrante_de, relation.id_usuario, relation.id_grupo, relation.fecha_de_ingreso, relation.rol, relation.silenciado)
         return {"message": f"Usuario {relation.id_usuario} se unió al grupo {relation.id_grupo} como {relation.rol}"}
 
+@app.get("/search_user/{user_name}")
+def search_user(user_name: str):
+    with driver.session(database="neo4j") as session:
+        query = """
+        MATCH (u:Usuario)
+        WHERE toLower(u.user_name) CONTAINS toLower($user_name)
+        RETURN u.user_name AS user_name, u.foto_de_perfil AS foto, u.id_usuario AS id_usuario
+        """
+        results = session.run(query, user_name=user_name)
+        users = [{"user_name": record["user_name"], "foto": record["foto"], "id_usuario": record["id_usuario"]} for record in results]
+
+        return users if users else {"message": "No se encontraron usuarios."}
+
+@app.get("/feed/{id_usuario}")
+def get_feed(id_usuario: int):
+    with driver.session(database="neo4j") as session:
+        query = """
+        MATCH (u:Usuario {id_usuario: $id_usuario})-[:SIGUE_A]->(seguido:Usuario)
+        OPTIONAL MATCH (seguido)-[pub:PUBLICA]->(p:Publicacion)
+        OPTIONAL MATCH (seguido)-[comp:COMPARTE]->(p)
+        WITH seguido, p, 
+             COLLECT(DISTINCT pub)[0] AS pub_rel, 
+             COLLECT(DISTINCT comp)[0] AS comp_rel
+        WITH seguido, p, pub_rel, comp_rel, toString(p.fecha) AS fecha
+        ORDER BY fecha DESC
+        RETURN DISTINCT 
+               p.id_publicacion AS id_publicacion, 
+               p.texto AS texto, 
+               fecha,
+               p.reacciones AS reacciones,
+               seguido.user_name AS autor,
+               CASE 
+                   WHEN pub_rel IS NOT NULL THEN 'PUBLICA' 
+                   ELSE 'COMPARTE' 
+               END AS tipo
+        """
+        results = session.run(query, id_usuario=id_usuario)
+        publicaciones = [
+            {
+                "id_publicacion": record["id_publicacion"],
+                "texto": record["texto"],
+                "fecha": record["fecha"],
+                "reacciones": record["reacciones"],
+                "autor": record["autor"],
+                "tipo": record["tipo"]
+            }
+            for record in results
+        ]
+
+        return publicaciones if publicaciones else {"message": "No hay publicaciones de personas que sigues."}
+
+
+
+@app.post("/like_post/{id_publicacion}")
+def like_post(id_publicacion: int):
+    with driver.session(database="neo4j") as session:
+        # Actualizar reacciones en Neo4j
+        query = """
+        MATCH (p:Publicacion {id_publicacion: $id_publicacion})
+        SET p.reacciones = COALESCE(p.reacciones, 0) + 1
+        RETURN p.reacciones AS nuevas_reacciones
+        """
+        result = session.run(query, id_publicacion=id_publicacion).single()
+        
+        if result:
+            return {"message": "Reacción añadida", "nuevas_reacciones": result["nuevas_reacciones"]}
+        else:
+            raise HTTPException(status_code=404, detail="Publicación no encontrada")
+
+
+
+
 @app.post("/publicaciones/")
 def create_publicacion_api(pub: PublicacionCreate):
     with driver.session(database="neo4j") as session:
@@ -438,6 +559,20 @@ def create_comentario_api(comment: ComentarioCreate):
             comment.likes
         )
         return {"message": "Comentario creado", "id_comentario": comment.id_comentario}
+
+@app.post("/relations/contiene_publicacion/")
+def create_contiene_publicacion_api(rel: GrupoPublicacionRelation):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(
+            create_relation_contiene_publicacion,
+            rel.id_grupo,
+            rel.id_publicacion,
+            rel.fecha_agregado,
+            rel.agregado_por,
+            rel.categoria,
+            rel.relevancia
+        )
+        return {"message": f"Grupo {rel.id_grupo} ahora contiene la publicación {rel.id_publicacion}"}
 
 @app.post("/relations/comparte/")
 def create_comparte_api(rel: RelationComparte):

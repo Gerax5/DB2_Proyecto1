@@ -119,7 +119,7 @@ def create_relation_SIGUE_A(tx):
         labels = user["labels"]
         
         # Probabilidad diferente si el usuario es Influencer o no
-        probabilidad_seguir = 0.2 if "Influencer" in labels else 0.4
+        probabilidad_seguir = 0.1 if "Influencer" in labels else 0.3
 
         # Seleccionar usuarios a seguir
         posibles_seguidos = [u["id_usuario"] for u in users if u["id_usuario"] != id_usuario]
@@ -405,7 +405,7 @@ with driver.session(database="neo4j") as session:
     session.execute_write(create_relation_ES_INTEGRANTE_DE)
 
     # Creación de Publicaciones y Comentarios
-    for i in range(1, 10):
+    for i in range(1, 20):
         texto_publicacion = fake.sentence()
         fecha_publicacion = date.today() - timedelta(days=random.randint(1, 30))
         reacciones = random.randint(0, 100)

@@ -1,174 +1,129 @@
 import { useEffect, useState } from "react";
+import "./home.css"; // Importamos los estilos
 
 const Home = () => {
-  const [following, setFollowing] = useState([]);
-  const [recommendations, setRecommendations] = useState([]);
-  const [search, setSearch] = useState("");
+  const [feed, setFeed] = useState([]);
   const userName = localStorage.getItem("userName");
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
 
-  useEffect(() => {
-    if (userName) {
-      // Obtener lista de seguidos
-      fetch(`http://localhost:8000/follows/${userName}`)
+  // Buscar usuarios
+  const handleSearch = (e) => {
+    if (e.key === "Enter" && search.trim() !== "") {
+      fetch(`http://localhost:8000/search_user/${search}`)
         .then((response) => response.json())
         .then((data) => {
           if (Array.isArray(data)) {
-            setFollowing(data);
+            const filteredResults = data.filter(
+              (user) => user.user_name !== userName
+            );
+            setSearchResults(filteredResults);
           } else {
-            setFollowing([]);
+            setSearchResults([]);
           }
         })
-        .catch((error) => console.error("Error al obtener la lista:", error));
-
-      // Obtener recomendaciones
-      fetch(`http://localhost:8000/recommendations/${userName}`)
-        .then((response) => response.json())
-        .then((data) => {
-          if (Array.isArray(data)) {
-            setRecommendations(data);
-          } else {
-            setRecommendations([]);
-          }
-        })
-        .catch((error) =>
-          console.error("Error al obtener recomendaciones:", error)
-        );
+        .catch((error) => console.error("Error en la búsqueda:", error));
     }
-  }, [userName]);
+  };
 
-  const handleFollow = (followedUser, userName) => {
-    const userId = localStorage.getItem("userId");
-    fetch("http://localhost:8000/relations/sigue_a/", {
+  const handleLike = (id_publicacion) => {
+    fetch(`http://localhost:8000/like_post/${id_publicacion}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id1: userId,
-        id2: followedUser,
-        recomendado_por_algoritmo: true,
-        notificaciones_activas: false,
-      }),
     })
       .then((response) => response.json())
       .then((data) => {
-        alert(`Ahora sigues a ${followedUser}`);
-        setRecommendations(
-          recommendations.filter((user) => user.user_name !== followedUser)
-        );
-        setFollowing([...following, { user_name: userName, foto: "" }]);
+        if (data.nuevas_reacciones !== undefined) {
+          // ✅ Actualizar el estado del feed con la nueva cantidad de reacciones
+          setFeed((prevFeed) =>
+            prevFeed.map((post) =>
+              post.id_publicacion === id_publicacion
+                ? { ...post, reacciones: data.nuevas_reacciones }
+                : post
+            )
+          );
+        }
       })
-      .catch((error) => console.error("Error al seguir usuario:", error));
+      .catch((error) => console.error("Error al dar like:", error));
   };
 
-  const filteredUsers = following.filter((user) =>
-    user.user_name.toLowerCase().includes(search.toLowerCase())
-  );
+  // Obtener el feed
+  useEffect(() => {
+    const userId = localStorage.getItem("userId");
+
+    if (userId) {
+      fetch(`http://localhost:8000/feed/${userId}`)
+        .then((response) => response.json())
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setFeed(data);
+          } else {
+            setFeed([]);
+          }
+        })
+        .catch((error) => console.error("Error al obtener el feed:", error));
+    }
+  }, []);
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        padding: "20px",
-      }}
-    >
-      <h1>Personas que sigues</h1>
+    <div className="home-container">
+      <h1>Buscar Usuarios</h1>
 
       {/* Barra de búsqueda */}
-      <input
-        type="text"
-        placeholder="Buscar usuario..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{
-          padding: "10px",
-          width: "300px",
-          marginBottom: "20px",
-          borderRadius: "5px",
-          border: "1px solid #ccc",
-        }}
-      />
+      <div className="search-bar">
+        <input
+          type="text"
+          placeholder="Buscar usuario..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={handleSearch}
+        />
+      </div>
 
-      {/* Lista de usuarios seguidos */}
-      <div style={{ width: "100%", maxWidth: "400px" }}>
-        {filteredUsers.length > 0 ? (
-          filteredUsers.map((user) => (
-            <div
-              key={user.user_name}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                backgroundColor: "#f0f0f0",
-                padding: "10px",
-                borderRadius: "5px",
-                marginBottom: "10px",
-              }}
-            >
+      {/* Resultados de búsqueda */}
+      <div className="search-results">
+        {searchResults.length > 0 ? (
+          searchResults.map((user) => (
+            <div key={user.user_name} className="user-card">
               <img
                 src={user.foto || "https://via.placeholder.com/50"}
                 alt={user.user_name}
-                style={{
-                  width: "50px",
-                  height: "50px",
-                  borderRadius: "50%",
-                  marginRight: "10px",
-                }}
               />
-              <p style={{ fontSize: "18px" }}>{user.user_name}</p>
+              <p>{user.user_name}</p>
             </div>
           ))
         ) : (
-          <p>No sigues a nadie aún.</p>
+          <p>No se encontraron usuarios.</p>
         )}
       </div>
 
-      {/* Recomendaciones de usuarios */}
-      <h2>Personas que podrías seguir</h2>
-      <div style={{ width: "100%", maxWidth: "400px" }}>
-        {recommendations.length > 0 ? (
-          recommendations.map((user) => (
-            <div
-              key={user.user_name}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                backgroundColor: "#e0e0e0",
-                padding: "10px",
-                borderRadius: "5px",
-                marginBottom: "10px",
-                justifyContent: "space-between",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center" }}>
-                <img
-                  src={user.foto || "https://via.placeholder.com/50"}
-                  alt={user.user_name}
-                  style={{
-                    width: "50px",
-                    height: "50px",
-                    borderRadius: "50%",
-                    marginRight: "10px",
-                  }}
-                />
-                <p style={{ fontSize: "18px" }}>{user.user_name}</p>
-              </div>
-              <button
-                onClick={() => handleFollow(user.id_usuario, user.user_name)}
-                style={{
-                  padding: "8px 12px",
-                  backgroundColor: "blue",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "5px",
-                  cursor: "pointer",
-                }}
-              >
-                Seguir
-              </button>
+      <h1>Publicaciones de personas que sigues</h1>
+
+      {/* Lista de publicaciones */}
+      <div className="feed-container">
+        {feed.length > 0 ? (
+          feed.map((post, index) => (
+            <div key={index} className="post-card">
+              <p className="post-header">
+                {post.tipo === "COMPARTE"
+                  ? `🔄 ${post.autor} compartió`
+                  : `📝 ${post.autor} publicó`}
+              </p>
+
+              <p className="post-text">{post.texto}</p>
+
+              <p className="post-footer">
+                📅 {post.fecha} |
+                <span
+                  className="like-button"
+                  onClick={() => handleLike(post.id_publicacion)}
+                >
+                  ❤️ {post.reacciones}
+                </span>
+              </p>
             </div>
           ))
         ) : (
-          <p>No hay recomendaciones por ahora.</p>
+          <p>No hay publicaciones recientes de las personas que sigues.</p>
         )}
       </div>
     </div>
