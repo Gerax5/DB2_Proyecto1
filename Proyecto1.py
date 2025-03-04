@@ -17,12 +17,23 @@ def DELETE_DATABASE(tx):
     """
     tx.run(query)
 
+def get_next_id(tx, label, id_field):
+    query = f"""
+    MATCH (n:{label})
+    RETURN COALESCE(MAX(n.{id_field}), 0) + 1 AS next_id
+    """
+    result = tx.run(query).single()
+    return result["next_id"]
+
+
 def create_user(tx, id_usuario, userName, isInfluencer = False, edad = random.randint(18, 60), password="1234"):
 
     if isInfluencer:
         verificado = random.random() < 0.5
     else:
         verificado = random.random() < 0.2
+
+    # next_id = get_next_id(tx, "Usuario", "id_usuario")
 
     query =  f"""
     CREATE (u:Usuario{":Influecer" if isInfluencer else ""}
@@ -42,6 +53,7 @@ def create_user(tx, id_usuario, userName, isInfluencer = False, edad = random.ra
     tx.run(query)
 
 def create_mensaje(tx, id_mensaje, texto):
+    # next_id = get_next_id(tx, "Mensaje", "id_mensaje")
     fecha_envio = f"date('{date.today() - timedelta(days=random.randint(1, 30))}')"
     estado = random.choice(["enviado", "entregado"])
     adjunto = "" if random.random() < 0.7 else "https://example.com/attachment.jpg"
@@ -60,6 +72,7 @@ def create_mensaje(tx, id_mensaje, texto):
 
 
 def create_grupo(tx, id_grupo, nombre):
+    # next_id = get_next_id(tx, "Grupo", "id_grupo")
     fecha_creacion = f"date('{date.today() - timedelta(days=random.randint(1, 365))}')"
     descripcion = fake.sentence()
     foto_grupo = "https://example.com/group.jpg"
@@ -92,6 +105,7 @@ def create_comentario(tx, id_comentario, titulo, contenido, fecha, likes):
 
 
 def create_publicacion(tx, id_publicacion, texto, fecha, reacciones):
+    # next_id = get_next_id(tx, "Publicacion", "id_publicacion")
     query = f"""
     CREATE (p:Publicacion {{
         id_publicacion: {id_publicacion},
@@ -372,9 +386,6 @@ def create_relation_CONTIENE_PUBLICACION(tx):
                categoria=categoria, 
                relevancia=relevancia)
     
-    print("Relaciones CONTIENE_PUBLICACION creadas exitosamente.")
-
-
 driver = GraphDatabase.driver(URI, auth=AUTH)
 
 with driver.session(database="neo4j") as session:
@@ -382,30 +393,43 @@ with driver.session(database="neo4j") as session:
     # Descomentar si se quiere borrar la base de datos
     # session.execute_write(DELETE_DATABASE)
 
-    for i in range(1, 20):
+    next_userID = session.execute_write(lambda tx: get_next_id(tx, "Usuario", "id_usuario"))
+    next_mensajeID = session.execute_write(lambda tx: get_next_id(tx, "Mensaje", "id_mensaje"))
+    next_grupoID = session.execute_write(lambda tx: get_next_id(tx, "Grupo", "id_grupo"))
+    next_publicacionID = session.execute_write(lambda tx: get_next_id(tx, "Publicacion", "id_publicacion"))
+    next_comentarioID = session.execute_write(lambda tx: get_next_id(tx, "Comentario", "id_comentario"))
+
+    print("ENTRANDO A CREAR USUARIO")
+    for i in range(1+next_userID, 200+next_userID):
         nombre = fake.name()
         isInfluencer = random.random() < 0.3
         session.execute_write(lambda tx: create_user(tx, i, nombre.replace(" ", ""), isInfluencer))
 
     users = session.execute_write(getAllUsers)
 
+
+    print("ENTRANDO A CREAR RELACIONES")
     session.execute_write(create_relation_SIGUE_A)
     session.execute_write(create_relation_BLOQUEA)
 
-    for i in range(1, 50):
+    print("ENTRANDO A MENSAJES")
+    for i in range(1+next_mensajeID, 150+next_mensajeID):
         texto = fake.sentence()
         session.execute_write(lambda tx: create_mensaje(tx, i, texto))
 
-    for i in range(1, 10):
+    print("ENTRANDO A GRUPO")
+    for i in range(1+next_grupoID, 20+next_grupoID):
         nombre = fake.company()
         session.execute_write(lambda tx: create_grupo(tx, i, nombre))
 
+    print("ENTRANDO A OTRAS RELACIONES")
     session.execute_write(create_relation_ESCRIBIO_MENSAJE)
     session.execute_write(create_relation_FUE_ENVIADO_A)
     session.execute_write(create_relation_ES_INTEGRANTE_DE)
 
     # Creación de Publicaciones y Comentarios
-    for i in range(1, 20):
+    print("ENTRANDO A OTRAS PUBLICACIONES y PUBLICA")
+    for i in range(1+next_publicacionID, 150+next_publicacionID):
         texto_publicacion = fake.sentence()
         fecha_publicacion = date.today() - timedelta(days=random.randint(1, 30))
         reacciones = random.randint(0, 100)
@@ -422,7 +446,8 @@ with driver.session(database="neo4j") as session:
 
     
 
-    for i in range(1, 15):
+    print("ENTRANDO A OTRAS COMENTARIOS")
+    for i in range(1+next_comentarioID, 20+next_comentarioID):
         titulo_comentario = fake.sentence(nb_words=3)
         contenido_comentario = fake.paragraph(nb_sentences=2)
         fecha_comentario = date.today() - timedelta(days=random.randint(1, 30))
@@ -439,6 +464,8 @@ with driver.session(database="neo4j") as session:
             )
         )
 
+
+    print("ENTRANDO A ULTIMAS RELACIONES")
     # Relaciones para publicaciones y comentarios
     session.execute_write(create_relation_COMPARTE)
     session.execute_write(create_relation_COMENTA)
