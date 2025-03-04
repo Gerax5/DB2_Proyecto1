@@ -2,6 +2,7 @@ import random
 from datetime import date, timedelta
 from neo4j import GraphDatabase
 from faker import Faker
+import datetime
 
 fake = Faker()
 
@@ -269,18 +270,124 @@ def create_relation_PERTENECE_A(tx):
     """
     tx.run(query)
 
+def getAllUsers(tx):
+    query = """
+    MATCH (u:Usuario) RETURN u.user_name, u.id_usuario
+    """
+    result = tx.run(query)
+    return [record.data() for record in result]
+
+def create_relation_PUBLICA(tx, id_publicacion, id_user, fecha_de_publicacion, ubicacion, hashtags):
+    query = """
+    MATCH (u:Usuario), (p:Publicacion)
+    WHERE u.id_usuario = $id_user AND p.id_publicacion = $id_publicacion
+    MERGE (u)-[r:PUBLICA]->(p)
+    SET r.fecha_de_publicacion = date($fecha_de_publicacion),
+        r.ubicacion = $ubicacion,
+        r.hashtags = $hashtags
+    """
+    tx.run(query, 
+           id_user=id_user, 
+           id_publicacion=id_publicacion, 
+           fecha_de_publicacion=fecha_de_publicacion, 
+           ubicacion=ubicacion, 
+           hashtags=hashtags)
+
+def create_random_data():
+    def randomDate():
+        start_date = datetime.date.today() - datetime.timedelta(days=5*365)
+        random_days = random.randint(0, 5*365)
+        return (start_date + datetime.timedelta(days=random_days)).isoformat()
+    
+    ubicaciones = ["Ciudad de México", "Nueva York", "Londres", "Tokio", "París", "Buenos Aires", "Berlín", "Madrid"]
+
+    hashtags_posibles = ["#travel", "#food", "#nature", "#fitness", "#love", "#fashion", "#music", "#art", "#photography", "#sports"]
+
+    hastags = random.sample(hashtags_posibles, random.randint(2, 5))
+    fecha_de_publicacion = randomDate()
+    ubicacion = random.choice(ubicaciones)
+
+    return hastags, fecha_de_publicacion, ubicacion
+
+  
+def create_relation_CONTIENE_PUBLICACION(tx):
+    def random_date():
+        start_date = datetime.date.today() - datetime.timedelta(days=5*365)
+        random_days = random.randint(0, 5*365)
+        return (start_date + datetime.timedelta(days=random_days)).isoformat()
+
+    categorias_posibles = ["anuncio", "evento", "noticia", "debate", "oferta"]
+    # Obtener todos los grupos
+    query_grupos = "MATCH (g:Grupo) RETURN g.id_grupo"
+    grupos = [record["g.id_grupo"] for record in tx.run(query_grupos)]
+    
+    # Obtener todas las publicaciones
+    query_publicaciones = "MATCH (p:Publicacion) RETURN p.id_publicacion"
+    publicaciones = [record["p.id_publicacion"] for record in tx.run(query_publicaciones)]
+    
+    if not grupos or not publicaciones:
+        print("No hay suficientes grupos o publicaciones en la base de datos.")
+        return
+
+    # Asignar publicaciones aleatorias a grupos
+    for grupo_id in grupos:
+        # Obtener los usuarios que son miembros del grupo
+        query_usuarios_grupo = """
+        MATCH (u:Usuario)-[:ES_INTEGRANTE_DE]->(g:Grupo)
+        WHERE g.id_grupo = $grupo_id
+        RETURN u.id_usuario
+        """
+        usuarios_grupo = [record["u.id_usuario"] for record in tx.run(query_usuarios_grupo, grupo_id=grupo_id)]
+        
+        if not usuarios_grupo:
+            print(f"El grupo {grupo_id} no tiene integrantes, se omite.")
+            continue  # Salta este grupo si no tiene integrantes
+
+        # Elegir una publicación aleatoria
+        publicacion_id = random.choice(publicaciones)
+        
+        # Elegir un usuario del grupo para ser el "agregado_por"
+        agregado_por = random.choice(usuarios_grupo)
+
+        # Generar datos aleatorios
+        fecha_agregado = random_date()
+        categoria = random.choice(categorias_posibles)
+        relevancia = round(random.uniform(0.1, 1.0), 2)  # Valor entre 0.1 y 1.0
+
+        # Crear relación en Neo4j
+        query = """
+        MATCH (g:Grupo), (p:Publicacion)
+        WHERE g.id_grupo = $grupo_id AND p.id_publicacion = $publicacion_id
+        MERGE (g)-[r:CONTIENE_PUBLICACION]->(p)
+        SET r.fecha_agregado = date($fecha_agregado),
+            r.agregado_por = $agregado_por,
+            r.categoria = $categoria,
+            r.relevancia = $relevancia
+        """
+        tx.run(query, 
+               grupo_id=grupo_id, 
+               publicacion_id=publicacion_id, 
+               fecha_agregado=fecha_agregado, 
+               agregado_por=agregado_por, 
+               categoria=categoria, 
+               relevancia=relevancia)
+    
+    print("Relaciones CONTIENE_PUBLICACION creadas exitosamente.")
+
 
 driver = GraphDatabase.driver(URI, auth=AUTH)
 
 with driver.session(database="neo4j") as session:
 
     # Descomentar si se quiere borrar la base de datos
-    session.execute_write(DELETE_DATABASE)
+    # session.execute_write(DELETE_DATABASE)
 
     for i in range(1, 20):
         nombre = fake.name()
         isInfluencer = random.random() < 0.3
         session.execute_write(lambda tx: create_user(tx, i, nombre.replace(" ", ""), isInfluencer))
+
+    users = session.execute_write(getAllUsers)
 
     session.execute_write(create_relation_SIGUE_A)
     session.execute_write(create_relation_BLOQUEA)
@@ -306,11 +413,21 @@ with driver.session(database="neo4j") as session:
             lambda tx: create_publicacion(tx, i, texto_publicacion, fecha_publicacion, reacciones)
         )
 
+        hastags, fecha_de_publicacion, ubicacion = create_random_data()
+
+        session.execute_write(
+            lambda tx: create_relation_PUBLICA(tx, i, random.choice(users)["u.id_usuario"], fecha_de_publicacion, ubicacion, hastags)
+        )
+
+
+    
+
     for i in range(1, 15):
         titulo_comentario = fake.sentence(nb_words=3)
         contenido_comentario = fake.paragraph(nb_sentences=2)
         fecha_comentario = date.today() - timedelta(days=random.randint(1, 30))
         likes = random.randint(0, 50)
+
         session.execute_write(
             lambda tx: create_comentario(
                 tx, 
@@ -326,5 +443,6 @@ with driver.session(database="neo4j") as session:
     session.execute_write(create_relation_COMPARTE)
     session.execute_write(create_relation_COMENTA)
     session.execute_write(create_relation_PERTENECE_A)
+    session.execute_write(create_relation_CONTIENE_PUBLICACION)
 
 driver.close()
