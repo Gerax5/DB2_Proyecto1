@@ -1,4 +1,5 @@
 import random
+import pandas as pd
 from datetime import date, timedelta
 from neo4j import GraphDatabase
 from faker import Faker
@@ -216,15 +217,21 @@ def create_relation_BLOQUEA(tx):
 
 def create_relation_ESCRIBIO_MENSAJE(tx):
     query = """
-    MATCH (u:Usuario), (m:Mensaje)
-    WHERE rand() < 0.7
-    MERGE (u)-[:ESCRIBIO_MENSAJE {
+    MATCH (m:Mensaje)  
+    WITH m, rand() AS r  
+    ORDER BY r  
+    MATCH (u:Usuario)  
+    WITH m, u, rand() AS r2  
+    ORDER BY r2  
+    WITH m, collect(u)[0] AS user  
+    MERGE (user)-[:ESCRIBIO_MENSAJE {
         escrito_a_las: m.fecha_envio,
         enviado: true,
         editado: rand() < 0.3
     }]->(m)
     """
     tx.run(query)
+
 
 
 def create_relation_FUE_ENVIADO_A(tx):
