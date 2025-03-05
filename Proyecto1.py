@@ -9,8 +9,8 @@ import datetime
 
 fake = Faker()
 
-URI = "neo4j+s://6e796de7.databases.neo4j.io"
-AUTH = ("neo4j", "sgmvLP0_IuV6rNHxSaTR0sTYqAumzrCUAwhl3ZsjvcE")
+URI = "neo4j+s://9b937ef7.databases.neo4j.io"
+AUTH = ("neo4j", "bsHJmEb5iRs55WLgztwslEYYOSJaiFMvTXUnzuFvpvc")
 
 
 def DELETE_DATABASE(tx):
@@ -227,7 +227,7 @@ def create_relation_ESCRIBIO_MENSAJE(tx):
     ORDER BY r2  
     WITH m, collect(u)[0] AS user  
     MERGE (user)-[:ESCRIBIO_MENSAJE {
-        escrito_a_las: m.fecha_envio,
+        escrito_a_las: COALESCE(m.fecha_envio, date()),
         enviado: true,
         editado: rand() < 0.3
     }]->(m)
@@ -238,36 +238,51 @@ def create_relation_ESCRIBIO_MENSAJE(tx):
 
 def create_relation_FUE_ENVIADO_A(tx):
     query = """
-    MATCH (m:Mensaje), (u:Usuario)
-    WHERE rand() < 0.5
-    MERGE (m)-[r:FUE_ENVIADO_A]->(u)
-    SET r.Fecha_envio = m.fecha_envio,
-        r.Leido = rand() < 0.6
-    WITH r, rand() < 0.6 AS has_read
-    FOREACH (_ IN CASE WHEN has_read THEN [1] ELSE [] END |
-        SET r.fecha_de_lectura = r.Fecha_envio
+    MATCH (m:Mensaje)  
+    WITH m, rand() AS r  
+    ORDER BY r  
+    MATCH (u:Usuario)  
+    WITH m, u, rand() AS r2  
+    ORDER BY r2  
+    WITH m, collect(u)[0] AS user  
+    MERGE (m)-[r:FUE_ENVIADO_A]->(user)  
+    SET r.Fecha_envio = COALESCE(m.fecha_envio, date()),  
+        r.Leido = rand() < 0.6  
+    WITH r, rand() < 0.6 AS has_read  
+    FOREACH (_ IN CASE WHEN has_read THEN [1] ELSE [] END |  
+        SET r.fecha_de_lectura = COALESCE(r.Fecha_envio  , date())
     )
     """
     tx.run(query)
 
 def create_relation_ES_INTEGRANTE_DE(tx):
     query = """
-    MATCH (u:Usuario), (g:Grupo)
-    WHERE rand() < 0.5
+    MATCH (u:Usuario)  
+    WITH u, rand() AS r  
+    ORDER BY r  
+    MATCH (g:Grupo)  
+    WITH u, g, rand() AS r2  
+    ORDER BY r2  
+    WITH u, collect(g)[0] AS group  
     MERGE (u)-[:ES_INTEGRANTE_DE {
         Fecha_de_ingreso: date(),
         Rol: CASE WHEN rand() < 0.1 THEN "Admin" ELSE "Miembro" END,
         Silenciado: rand() < 0.3
-    }]->(g)
+    }]->(group)
     """
     tx.run(query)
 
 
 def create_relation_COMPARTE(tx):
     query = """
-    MATCH (u:Usuario), (p:Publicacion)
-    WHERE rand() < 0.3
-    MERGE (u)-[:COMPARTE {
+    MATCH (p:Publicacion)  
+    WITH p, rand() AS r  
+    ORDER BY r  
+    MATCH (u:Usuario)  
+    WITH p, u, rand() AS r2  
+    ORDER BY r2  
+    WITH p, collect(u)[0] AS user  
+    MERGE (user)-[:COMPARTE {
         fecha_compartido: date()
     }]->(p)
     """
@@ -276,9 +291,14 @@ def create_relation_COMPARTE(tx):
 
 def create_relation_COMENTA(tx):
     query = """
-    MATCH (u:Usuario), (c:Comentario)
-    WHERE rand() < 0.4
-    MERGE (u)-[:COMENTA {
+    MATCH (c:Comentario)  
+    WITH c, rand() AS r  
+    ORDER BY r  
+    MATCH (u:Usuario)  
+    WITH c, u, rand() AS r2  
+    ORDER BY r2  
+    WITH c, collect(u)[0] AS user  
+    MERGE (user)-[:COMENTA {
         fecha_comentario: date()
     }]->(c)
     """
@@ -287,9 +307,14 @@ def create_relation_COMENTA(tx):
 
 def create_relation_PERTENECE_A(tx):
     query = """
-    MATCH (c:Comentario), (p:Publicacion)
-    WHERE rand() < 0.7
-    MERGE (c)-[:PERTENECE_A]->(p)
+    MATCH (c:Comentario)  
+    WITH c, rand() AS r  
+    ORDER BY r  
+    MATCH (p:Publicacion)  
+    WITH c, p, rand() AS r2  
+    ORDER BY r2  
+    WITH c, collect(p)[0] AS post  
+    MERGE (c)-[:PERTENECE_A]->(post)
     """
     tx.run(query)
 
@@ -428,98 +453,98 @@ def upload_csv_to_neo4j(file_path, tx):
 
 
 #Usage Example:
-file_path = "test.csv"
-driver = GraphDatabase.driver(URI, auth=AUTH)
-with driver.session(database="neo4j") as session:
-    session.execute_write(lambda tx: upload_csv_to_neo4j(file_path, tx))
-driver.close()
-
-
-
+# file_path = "test.csv"
 # driver = GraphDatabase.driver(URI, auth=AUTH)
-
 # with driver.session(database="neo4j") as session:
-
-#     # Descomentar si se quiere borrar la base de datos
-#     # session.execute_write(DELETE_DATABASE)
-
-#     next_userID = session.execute_write(lambda tx: get_next_id(tx, "Usuario", "id_usuario"))
-#     next_mensajeID = session.execute_write(lambda tx: get_next_id(tx, "Mensaje", "id_mensaje"))
-#     next_grupoID = session.execute_write(lambda tx: get_next_id(tx, "Grupo", "id_grupo"))
-#     next_publicacionID = session.execute_write(lambda tx: get_next_id(tx, "Publicacion", "id_publicacion"))
-#     next_comentarioID = session.execute_write(lambda tx: get_next_id(tx, "Comentario", "id_comentario"))
-
-#     print("ENTRANDO A CREAR USUARIO")
-#     for i in range(1+next_userID, 200+next_userID):
-#         nombre = fake.name()
-#         isInfluencer = random.random() < 0.3
-#         session.execute_write(lambda tx: create_user(tx, i, nombre.replace(" ", ""), isInfluencer))
-
-#     users = session.execute_write(getAllUsers)
+#     session.execute_write(lambda tx: upload_csv_to_neo4j(file_path, tx))
+# driver.close()
 
 
-#     print("ENTRANDO A CREAR RELACIONES")
-#     session.execute_write(create_relation_SIGUE_A)
-#     session.execute_write(create_relation_BLOQUEA)
 
-#     print("ENTRANDO A MENSAJES")
-#     for i in range(1+next_mensajeID, 150+next_mensajeID):
-#         texto = fake.sentence()
-#         session.execute_write(lambda tx: create_mensaje(tx, i, texto))
+driver = GraphDatabase.driver(URI, auth=AUTH)
 
-#     print("ENTRANDO A GRUPO")
-#     for i in range(1+next_grupoID, 20+next_grupoID):
-#         nombre = fake.company()
-#         session.execute_write(lambda tx: create_grupo(tx, i, nombre))
+with driver.session(database="neo4j") as session:
 
-#     print("ENTRANDO A OTRAS RELACIONES")
-#     session.execute_write(create_relation_ESCRIBIO_MENSAJE)
-#     session.execute_write(create_relation_FUE_ENVIADO_A)
-#     session.execute_write(create_relation_ES_INTEGRANTE_DE)
+    # Descomentar si se quiere borrar la base de datos
+    # session.execute_write(DELETE_DATABASE)
 
-#     # Creación de Publicaciones y Comentarios
-#     print("ENTRANDO A OTRAS PUBLICACIONES y PUBLICA")
-#     for i in range(1+next_publicacionID, 150+next_publicacionID):
-#         texto_publicacion = fake.sentence()
-#         fecha_publicacion = date.today() - timedelta(days=random.randint(1, 30))
-#         reacciones = random.randint(0, 100)
-#         session.execute_write(
-#             lambda tx: create_publicacion(tx, i, texto_publicacion, fecha_publicacion, reacciones)
-#         )
+    next_userID = session.execute_write(lambda tx: get_next_id(tx, "Usuario", "id_usuario"))
+    next_mensajeID = session.execute_write(lambda tx: get_next_id(tx, "Mensaje", "id_mensaje"))
+    next_grupoID = session.execute_write(lambda tx: get_next_id(tx, "Grupo", "id_grupo"))
+    next_publicacionID = session.execute_write(lambda tx: get_next_id(tx, "Publicacion", "id_publicacion"))
+    next_comentarioID = session.execute_write(lambda tx: get_next_id(tx, "Comentario", "id_comentario"))
 
-#         hastags, fecha_de_publicacion, ubicacion = create_random_data()
+    print("ENTRANDO A CREAR USUARIO")
+    for i in range(1+next_userID, 200+next_userID):
+        nombre = fake.name()
+        isInfluencer = random.random() < 0.3
+        session.execute_write(lambda tx: create_user(tx, i, nombre.replace(" ", ""), isInfluencer))
 
-#         session.execute_write(
-#             lambda tx: create_relation_PUBLICA(tx, i, random.choice(users)["u.id_usuario"], fecha_de_publicacion, ubicacion, hastags)
-#         )
+    users = session.execute_write(getAllUsers)
+
+
+    print("ENTRANDO A CREAR RELACIONES")
+    session.execute_write(create_relation_SIGUE_A)
+    session.execute_write(create_relation_BLOQUEA)
+
+    print("ENTRANDO A MENSAJES")
+    for i in range(1+next_mensajeID, 150+next_mensajeID):
+        texto = fake.sentence()
+        session.execute_write(lambda tx: create_mensaje(tx, i, texto))
+
+    print("ENTRANDO A GRUPO")
+    for i in range(1+next_grupoID, 20+next_grupoID):
+        nombre = fake.company()
+        session.execute_write(lambda tx: create_grupo(tx, i, nombre))
+
+    print("ENTRANDO A OTRAS RELACIONES")
+    session.execute_write(create_relation_ESCRIBIO_MENSAJE)
+    session.execute_write(create_relation_FUE_ENVIADO_A)
+    session.execute_write(create_relation_ES_INTEGRANTE_DE)
+
+    # Creación de Publicaciones y Comentarios
+    print("ENTRANDO A OTRAS PUBLICACIONES y PUBLICA")
+    for i in range(1+next_publicacionID, 150+next_publicacionID):
+        texto_publicacion = fake.sentence()
+        fecha_publicacion = date.today() - timedelta(days=random.randint(1, 30))
+        reacciones = random.randint(0, 100)
+        session.execute_write(
+            lambda tx: create_publicacion(tx, i, texto_publicacion, fecha_publicacion, reacciones)
+        )
+
+        hastags, fecha_de_publicacion, ubicacion = create_random_data()
+
+        session.execute_write(
+            lambda tx: create_relation_PUBLICA(tx, i, random.choice(users)["u.id_usuario"], fecha_de_publicacion, ubicacion, hastags)
+        )
 
 
     
 
-#     print("ENTRANDO A OTRAS COMENTARIOS")
-#     for i in range(1+next_comentarioID, 20+next_comentarioID):
-#         titulo_comentario = fake.sentence(nb_words=3)
-#         contenido_comentario = fake.paragraph(nb_sentences=2)
-#         fecha_comentario = date.today() - timedelta(days=random.randint(1, 30))
-#         likes = random.randint(0, 50)
+    print("ENTRANDO A OTRAS COMENTARIOS")
+    for i in range(1+next_comentarioID, 20+next_comentarioID):
+        titulo_comentario = fake.sentence(nb_words=3)
+        contenido_comentario = fake.paragraph(nb_sentences=2)
+        fecha_comentario = date.today() - timedelta(days=random.randint(1, 30))
+        likes = random.randint(0, 50)
 
-#         session.execute_write(
-#             lambda tx: create_comentario(
-#                 tx, 
-#                 i, 
-#                 titulo_comentario, 
-#                 contenido_comentario, 
-#                 fecha_comentario, 
-#                 likes
-#             )
-#         )
+        session.execute_write(
+            lambda tx: create_comentario(
+                tx, 
+                i, 
+                titulo_comentario, 
+                contenido_comentario, 
+                fecha_comentario, 
+                likes
+            )
+        )
 
 
-#     print("ENTRANDO A ULTIMAS RELACIONES")
-#     # Relaciones para publicaciones y comentarios
-#     session.execute_write(create_relation_COMPARTE)
-#     session.execute_write(create_relation_COMENTA)
-#     session.execute_write(create_relation_PERTENECE_A)
-#     session.execute_write(create_relation_CONTIENE_PUBLICACION)
+    print("ENTRANDO A ULTIMAS RELACIONES")
+    # Relaciones para publicaciones y comentarios
+    session.execute_write(create_relation_COMPARTE)
+    session.execute_write(create_relation_COMENTA)
+    session.execute_write(create_relation_PERTENECE_A)
+    session.execute_write(create_relation_CONTIENE_PUBLICACION)
 
-# driver.close()
+driver.close()

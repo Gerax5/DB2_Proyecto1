@@ -203,7 +203,7 @@ def get_recommendations(user_name: str):
         return recommendations if recommendations else {"message": "No hay recomendaciones disponibles."}
 
 
-
+# Users
 def create_user(tx, id_usuario, user_name, email, password, is_influencer, age, profile_pic):
     verificado = random.random() < (0.5 if is_influencer else 0.2)
     
@@ -226,6 +226,41 @@ def get_all_users(tx):
     query = "MATCH (u:Usuario) RETURN u.id_usuario AS id, u.user_name AS user_name, labels(u) AS labels"
     return tx.run(query).data()
 
+def get_user(tx, user_id: int):
+    query = """
+    MATCH (u:Usuario {id_usuario: $user_id})
+    RETURN u
+    """
+    result = tx.run(query, user_id=user_id).data()
+    if not result:
+        raise HTTPException(status_code=404, detail="User not found")
+    return result[0]
+
+def add_user_properties(tx, user_id: int, properties: dict):
+    query = """
+    MATCH (u:Usuario {id_usuario: $user_id})
+    SET u += $properties
+    RETURN u
+    """
+    tx.run(query, user_id=user_id, properties=properties)
+
+def update_user_properties(tx, user_id: int, properties: dict):
+    query = """
+    MATCH (u:Usuario {id_usuario: $user_id})
+    SET u += $properties
+    RETURN u
+    """
+    tx.run(query, user_id=user_id, properties=properties)
+
+def delete_user(tx, user_id: int):
+    query = "MATCH (u:Usuario {id: $user_id}) DETACH DELETE u"
+    tx.run(query, user_id=user_id)
+
+def delete_all_users(tx):
+    query = "MATCH (u:Usuario) DETACH DELETE u"
+    tx.run(query)
+
+
 def create_relation_sigue_a(tx, id1, id2, notificaciones_activas=False, recomendado_por_algoritmo=False):
     query = """
     MATCH (u1:Usuario {id_usuario: $id1}), (u2:Usuario {id_usuario: $id2})
@@ -233,7 +268,6 @@ def create_relation_sigue_a(tx, id1, id2, notificaciones_activas=False, recomend
     RETURN u1, u2
     """
     tx.run(query, id1=id1, id2=id2, notificaciones_activas=notificaciones_activas, recomendado_por_algoritmo=recomendado_por_algoritmo)
-
 
 def create_relation_bloquea(tx, id1, id2):
     query = """
@@ -256,6 +290,45 @@ def create_mensaje(tx, id_mensaje, texto, fecha_envio, estado, adjunto):
     """
     tx.run(query, id_mensaje=id_mensaje, texto=texto, fecha_envio=fecha_envio, estado=estado, adjunto=adjunto)
 
+def get_all_mensajes(tx):
+    query = "MATCH (m:Mensaje) RETURN m.id_mensaje AS id_mensaje, m.texto AS texto, m.fecha_envio AS fecha_envio, m.estado AS estado, m.adjunto AS adjunto"
+    return tx.run(query).data()
+
+def get_message(tx, message_id: int):
+    query = """
+    MATCH (m:Mensaje {id_mensaje: $message_id})
+    RETURN m
+    """
+    result = tx.run(query, message_id=message_id).data()
+    if not result:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return result[0]
+
+def add_message_properties(tx, message_id: int, properties: dict):
+    query = """
+    MATCH (m:Mensaje {id_mensaje: $message_id})
+    SET m += $properties
+    RETURN m
+    """
+    tx.run(query, message_id=message_id, properties=properties)
+
+def update_message_properties(tx, message_id: int, properties: dict):
+    query = """
+    MATCH (m:Mensaje {id_mensaje: $message_id})
+    SET m += $properties
+    RETURN m
+    """
+    tx.run(query, message_id=message_id, properties=properties)
+
+def delete_message(tx, message_id: int):
+    query = "MATCH (m:Mensaje {id_mensaje: $message_id}) DETACH DELETE m"
+    tx.run(query, message_id=message_id)
+
+def delete_all_messages(tx):
+    query = "MATCH (m:Mensaje) DETACH DELETE m"
+    tx.run(query)
+
+
 def create_grupo(tx, id_grupo, nombre, fecha_creacion, miembros, descripcion, foto_grupo):
     query = """
     CREATE (g:Grupo {
@@ -270,13 +343,44 @@ def create_grupo(tx, id_grupo, nombre, fecha_creacion, miembros, descripcion, fo
     """
     tx.run(query, id_grupo=id_grupo, nombre=nombre, fecha_creacion=fecha_creacion, miembros=miembros, descripcion=descripcion, foto_grupo=foto_grupo)
 
-def get_all_mensajes(tx):
-    query = "MATCH (m:Mensaje) RETURN m.id_mensaje AS id_mensaje, m.texto AS texto, m.fecha_envio AS fecha_envio, m.estado AS estado, m.adjunto AS adjunto"
-    return tx.run(query).data()
-
 def get_all_grupos(tx):
     query = "MATCH (g:Grupo) RETURN g.id_grupo AS id_grupo, g.nombre AS nombre, g.fecha_creacion AS fecha_creacion, g.descripcion AS descripcion, g.foto_grupo AS foto_grupo"
     return tx.run(query).data()
+
+def get_group(tx, group_id: int):
+    query = """
+    MATCH (g:Grupo {id_grupo: $group_id})
+    RETURN g
+    """
+    result = tx.run(query, group_id=group_id).data()
+    if not result:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return result[0]
+
+def add_group_properties(tx, group_id: int, properties: dict):
+    query = """
+    MATCH (g:Grupo {id_grupo: $group_id})
+    SET g += $properties
+    RETURN g
+    """
+    tx.run(query, group_id=group_id, properties=properties)
+
+def update_group_properties(tx, group_id: int, properties: dict):
+    query = """
+    MATCH (g:Grupo {id_grupo: $group_id})
+    SET g += $properties
+    RETURN g
+    """
+    tx.run(query, group_id=group_id, properties=properties)
+
+def delete_group(tx, group_id: int):
+    query = "MATCH (g:Grupo {id_grupo: $group_id}) DETACH DELETE g"
+    tx.run(query, group_id=group_id)
+
+def delete_all_groups(tx):
+    query = "MATCH (g:Grupo) DETACH DELETE g"
+    tx.run(query)
+
 
 def create_relation_escribio_mensaje(tx, id_usuario, id_mensaje, escrito_a_las, enviado, editado):
     query = """
@@ -318,6 +422,41 @@ def create_publicacion_func(tx, id_publicacion, texto, fecha, reacciones):
            fecha=fecha,
            reacciones=reacciones)
 
+def get_publication(tx, publication_id: int):
+    query = """
+    MATCH (p:Publicacion {id_publicacion: $publication_id})
+    RETURN p
+    """
+    result = tx.run(query, publication_id=publication_id).data()
+    if not result:
+        raise HTTPException(status_code=404, detail="Publication not found")
+    return result[0]
+
+def add_publication_properties(tx, publication_id: int, properties: dict):
+    query = """
+    MATCH (p:Publicacion {id_publicacion: $publication_id})
+    SET p += $properties
+    RETURN p
+    """
+    tx.run(query, publication_id=publication_id, properties=properties)
+
+def update_publication_properties(tx, publication_id: int, properties: dict):
+    query = """
+    MATCH (p:Publicacion {id_publicacion: $publication_id})
+    SET p += $properties
+    RETURN p
+    """
+    tx.run(query, publication_id=publication_id, properties=properties)
+
+def delete_publication(tx, publication_id: int):
+    query = "MATCH (p:Publicacion {id_publicacion: $publication_id}) DETACH DELETE p"
+    tx.run(query, publication_id=publication_id)
+
+def delete_all_publications(tx):
+    query = "MATCH (p:Publicacion) DETACH DELETE p"
+    tx.run(query)
+
+
 def create_comentario_func(tx, id_comentario, titulo, contenido, fecha, likes):
     query = """
     CREATE (c:Comentario {
@@ -335,6 +474,41 @@ def create_comentario_func(tx, id_comentario, titulo, contenido, fecha, likes):
            contenido=contenido,
            fecha=fecha,
            likes=likes)
+
+def get_comment(tx, id_comentario: int):
+    query = """
+    MATCH (c:Comentario {id_comentario: $id_comentario})
+    RETURN c
+    """
+    result = tx.run(query, id_comentario=id_comentario).data()
+    if not result:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    return result[0]
+
+def add_comment_properties(tx, id_comentario: int, properties: dict):
+    query = """
+    MATCH (c:Comentario {id_comentario: $id_comentario})
+    SET c += $properties
+    RETURN c
+    """
+    tx.run(query, id_comentario=id_comentario, properties=properties)
+
+def update_comment_properties(tx, id_comentario: int, properties: dict):
+    query = """
+    MATCH (c:Comentario {id_comentario: $id_comentario})
+    SET c += $properties
+    RETURN c
+    """
+    tx.run(query, id_comentario=id_comentario, properties=properties)
+
+def delete_comment(tx, id_comentario: int):
+    query = "MATCH (c:Comentario {id_comentario: $id_comentario}) DETACH DELETE c"
+    tx.run(query, id_comentario=id_comentario)
+
+def delete_all_comments(tx):
+    query = "MATCH (c:Comentario) DETACH DELETE c"
+    tx.run(query)
+
 
 def create_relation_comparte(tx, id_usuario, id_publicacion, fecha_compartido):
     query = """
@@ -362,6 +536,32 @@ def create_relation_comenta(tx, id_usuario, id_comentario, fecha_comentario):
            id_comentario=id_comentario,
            fecha_comentario=fecha_comentario)
 
+def get_relation_comenta(tx, relation_id: int):
+    query = """
+    MATCH ()-[r:COMENTA]->() WHERE id(r) = $relation_id
+    RETURN r
+    """
+    result = tx.run(query, relation_id=relation_id).data()
+    if not result:
+        raise HTTPException(status_code=404, detail="RelationComenta not found")
+    return result[0]
+
+def add_relation_comenta_properties(tx, relation_id: int, properties: dict):
+    query = """
+    MATCH ()-[r:COMENTA]->() WHERE id(r) = $relation_id
+    SET r += $properties
+    RETURN r
+    """
+    tx.run(query, relation_id=relation_id, properties=properties)
+
+def update_relation_comenta_properties(tx, relation_id: int, properties: dict):
+    query = """
+    MATCH ()-[r:COMENTA]->() WHERE id(r) = $relation_id
+    SET r += $properties
+    RETURN r
+    """
+    tx.run(query, relation_id=relation_id, properties=properties)
+
 def create_relation_pertenece_a(tx, id_comentario, id_publicacion):
     query = """
     MATCH (c:Comentario {id_comentario: $id_comentario}), (p:Publicacion {id_publicacion: $id_publicacion})
@@ -371,7 +571,6 @@ def create_relation_pertenece_a(tx, id_comentario, id_publicacion):
     tx.run(query, 
            id_comentario=id_comentario,
            id_publicacion=id_publicacion)
-
 
 # ----------------- ENDPOINTS -----------------
 
@@ -400,6 +599,37 @@ def get_users():
     with driver.session(database="neo4j") as session:
         users = session.execute_read(get_all_users)
         return users
+    
+@app.get("/users/{user_id}")
+def get_user_api(user_id: int):
+    with driver.session(database="neo4j") as session:
+        user = session.execute_read(get_user, user_id)
+        return user if user else {"message": "User not found"}
+    
+@app.post("/users/{user_id}/add_properties")
+def add_user_properties_api(user_id: int, properties: dict):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(add_user_properties, user_id, properties)
+        return {"message": f"Properties added to user {user_id}", "properties": properties}
+    
+@app.put("/users/{user_id}/update_properties")
+def update_user_properties_api(user_id: int, properties: dict):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(update_user_properties, user_id, properties)
+        return {"message": f"Properties updated for user {user_id}", "properties": properties}
+
+@app.delete("/users/{user_id}")
+def delete_user_api(user_id: int):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(delete_user, user_id)
+        return {"message": f"User {user_id} deleted"}
+
+@app.delete("/users")
+def delete_all_users_api():
+    with driver.session(database="neo4j") as session:
+        session.execute_write(delete_all_users)
+        return {"message": "All users deleted"}
+
 
 @app.post("/relations/sigue_a/")
 def follow_user(relation: RelationSIGUEA):
@@ -426,12 +656,37 @@ def get_mensajes():
     with driver.session(database="neo4j") as session:
         mensajes = session.execute_read(get_all_mensajes)
         return mensajes if mensajes else {"message": "No hay mensajes disponibles."}
-
-@app.get("/grupos/")
-def get_grupos():
+    
+@app.get("/mensajes/{message_id}")
+def get_message_api(message_id: int):
     with driver.session(database="neo4j") as session:
-        grupos = session.execute_read(get_all_grupos)
-        return grupos if grupos else {"message": "No hay grupos disponibles."}
+        message = session.execute_read(get_message, message_id)
+        return message if message else {"message": "Message not found"}
+
+@app.post("/mensajes/{message_id}/add_properties")
+def add_message_properties_api(message_id: int, properties: dict):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(add_message_properties, message_id, properties)
+        return {"message": f"Properties added to message {message_id}", "properties": properties}
+
+@app.put("/mensajes/{message_id}/update_properties")
+def update_message_properties_api(message_id: int, properties: dict):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(update_message_properties, message_id, properties)
+        return {"message": f"Properties updated for message {message_id}", "properties": properties}
+
+@app.delete("/messages/{message_id}")
+def delete_message_api(message_id: int):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(delete_message, message_id)
+        return {"message": f"Message {message_id} deleted"}
+
+@app.delete("/messages")
+def delete_all_messages_api():
+    with driver.session(database="neo4j") as session:
+        session.execute_write(delete_all_messages)
+        return {"message": "All messages deleted"}
+
 
 @app.post("/mensajes/")
 def create_mensaje_api(mensaje: MensajeCreate):
@@ -444,6 +699,43 @@ def create_grupo_api(grupo: GrupoCreate):
     with driver.session(database="neo4j") as session:
         session.execute_write(create_grupo, grupo.id_grupo, grupo.nombre, grupo.fecha_creacion, grupo.miembros, grupo.descripcion, grupo.foto_grupo)
         return {"message": "Grupo creado", "id_grupo": grupo.id_grupo}
+    
+@app.get("/grupos/")
+def get_grupos():
+    with driver.session(database="neo4j") as session:
+        grupos = session.execute_read(get_all_grupos)
+        return grupos if grupos else {"message": "No hay grupos disponibles."}
+
+@app.get("/grupos/{group_id}")
+def get_group_api(group_id: int):
+    with driver.session(database="neo4j") as session:
+        group = session.execute_read(get_group, group_id)
+        return group if group else {"message": "Group not found"}
+
+@app.post("/grupos/{group_id}/add_properties")
+def add_group_properties_api(group_id: int, properties: dict):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(add_group_properties, group_id, properties)
+        return {"message": f"Properties added to group {group_id}", "properties": properties}
+
+@app.put("/grupos/{group_id}/update_properties")
+def update_group_properties_api(group_id: int, properties: dict):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(update_group_properties, group_id, properties)
+        return {"message": f"Properties updated for group {group_id}", "properties": properties}
+
+@app.delete("/groups/{group_id}")
+def delete_group_api(group_id: int):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(delete_group, group_id)
+        return {"message": f"Group {group_id} deleted"}
+
+@app.delete("/groups")
+def delete_all_groups_api():
+    with driver.session(database="neo4j") as session:
+        session.execute_write(delete_all_groups)
+        return {"message": "All groups deleted"}
+
 
 @app.post("/relations/escribio_mensaje/")
 def escribio_mensaje(relation: RelationEscribioMensaje):
@@ -531,8 +823,7 @@ def like_post(id_publicacion: int):
             return {"message": "Reacción añadida", "nuevas_reacciones": result["nuevas_reacciones"]}
         else:
             raise HTTPException(status_code=404, detail="Publicación no encontrada")
-
-
+        
 
 
 @app.post("/publicaciones/")
@@ -546,6 +837,37 @@ def create_publicacion_api(pub: PublicacionCreate):
             pub.reacciones
         )
         return {"message": "Publicación creada", "id_publicacion": pub.id_publicacion}
+    
+@app.get("/publicaciones/{publication_id}")
+def get_publication_api(publication_id: int):
+    with driver.session(database="neo4j") as session:
+        publication = session.execute_read(get_publication, publication_id)
+        return publication if publication else {"message": "Publication not found"}
+    
+@app.post("/publicaciones/{publication_id}/add_properties")
+def add_publication_properties_api(publication_id: int, properties: dict):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(add_publication_properties, publication_id, properties)
+        return {"message": f"Properties added to publication {publication_id}", "properties": properties}
+    
+@app.put("/publicaciones/{publication_id}/update_properties")
+def update_publication_properties_api(publication_id: int, properties: dict):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(update_publication_properties, publication_id, properties)
+        return {"message": f"Properties updated for publication {publication_id}", "properties": properties}
+
+@app.delete("/publicaciones/{publication_id}")
+def delete_publication_api(publication_id: int):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(delete_publication, publication_id)
+        return {"message": f"Publication {publication_id} deleted"}
+
+@app.delete("/publicaciones")
+def delete_all_publications_api():
+    with driver.session(database="neo4j") as session:
+        session.execute_write(delete_all_publications)
+        return {"message": "All publications deleted"}
+
 
 @app.post("/comentarios/")
 def create_comentario_api(comment: ComentarioCreate):
@@ -559,6 +881,37 @@ def create_comentario_api(comment: ComentarioCreate):
             comment.likes
         )
         return {"message": "Comentario creado", "id_comentario": comment.id_comentario}
+    
+@app.get("/comentarios/{id_comentario}")
+def get_comment_api(id_comentario: int):
+    with driver.session(database="neo4j") as session:
+        comment = session.execute_read(get_comment, id_comentario)
+        return comment if comment else {"message": "Comment not found"}
+    
+@app.post("/comentarios/{id_comentario}/add_properties")
+def add_comment_properties_api(id_comentario: int, properties: dict):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(add_comment_properties, id_comentario, properties)
+        return {"message": f"Properties added to comment {id_comentario}", "properties": properties}
+    
+@app.put("/comentarios/{id_comentario}/update_properties")
+def update_comment_properties_api(id_comentario: int, properties: dict):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(update_comment_properties, id_comentario, properties)
+        return {"message": f"Properties updated for comment {id_comentario}", "properties": properties}
+
+@app.delete("/comments/{id_comentario}")
+def delete_comment_api(id_comentario: int):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(delete_comment, id_comentario)
+        return {"message": f"Comment {id_comentario} deleted"}
+
+@app.delete("/comments")
+def delete_all_comments_api():
+    with driver.session(database="neo4j") as session:
+        session.execute_write(delete_all_comments)
+        return {"message": "All comments deleted"}
+
 
 @app.post("/relations/contiene_publicacion/")
 def create_contiene_publicacion_api(rel: GrupoPublicacionRelation):
@@ -584,7 +937,7 @@ def create_comparte_api(rel: RelationComparte):
             rel.fecha_compartido
         )
         return {"message": f"Usuario {rel.id_usuario} compartió la publicación {rel.id_publicacion}"}
-
+    
 @app.post("/relations/comenta/")
 def create_comenta_api(rel: RelationComenta):
     with driver.session(database="neo4j") as session:
@@ -605,3 +958,4 @@ def create_pertenece_a_api(rel: RelationPerteneceA):
             rel.id_publicacion
         )
         return {"message": f"Comentario {rel.id_comentario} pertenece a la publicación {rel.id_publicacion}"}
+    
