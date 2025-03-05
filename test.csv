@@ -1,0 +1,21 @@
+type,start_label,start_id,start_properties,relationship,end_label,end_id,end_properties,created_at
+node,Usuario,1,"{name: 'Alice', age: 25, email: 'alice@example.com'}",,,,,
+node,Usuario,2,"{name: 'Bob', age: 30, email: 'bob@example.com'}",,,,,
+node,Usuario,3,"{name: 'Charlie', age: 28, email: 'charlie@example.com'}",,,,,
+node,Mensaje,101,"{content: 'Hello, world!', fecha_envio: '2024-03-01'}",,,,,
+node,Mensaje,102,"{content: 'Neo4j is cool!', fecha_envio: '2024-03-02'}",,,,,
+node,Mensaje,103,"{content: 'Graph databases rock!', fecha_envio: '2024-03-03'}",,,,,
+node,Grupo,201,"{name: 'Developers', created_at: '2023-05-10'}",,,,,
+node,Grupo,202,"{name: 'Designers', created_at: '2023-06-15'}",,,,,
+relationship,Usuario,1,,ESCRIBIO_MENSAJE,Mensaje,101,"{enviado: true, editado: false}",2024-03-01
+relationship,Usuario,2,,ESCRIBIO_MENSAJE,Mensaje,102,"{enviado: true, editado: true}",2024-03-02
+relationship,Usuario,3,,ESCRIBIO_MENSAJE,Mensaje,103,"{enviado: true, editado: false}",2024-03-03
+relationship,Usuario,1,,PERTENECE_A,Grupo,201,"{rol: 'admin'}",2024-03-04
+relationship,Usuario,2,,PERTENECE_A,Grupo,201,"{rol: 'member'}",2024-03-05
+relationship,Usuario,3,,PERTENECE_A,Grupo,202,"{rol: 'member'}",2024-03-06
+relationship,Usuario,1,,SIGUE,Usuario,2,"{}",2024-03-07
+relationship,Usuario,2,,SIGUE,Usuario,3,"{}",2024-03-08
+relationship,Usuario,3,,SIGUE,Usuario,1,"{}",2024-03-09
+relationship,Mensaje,101,,ENVIADO_A,Grupo,201,"{visto_por: ['Bob', 'Charlie']}",2024-03-10
+relationship,Mensaje,102,,ENVIADO_A,Grupo,202,"{visto_por: ['Alice']}",2024-03-11
+relationship,Mensaje,103,,ENVIADO_A,Grupo,201,"{visto_por: ['Alice', 'Bob']}",2024-03-12
