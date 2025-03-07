@@ -115,6 +115,10 @@ class RelationComenta(BaseModel):
     id_comentario: int
     fecha_comentario: date = date.today()
 
+class updateUser(BaseModel):
+    user_id: int
+    properties: UserCreate
+
 class RelationPerteneceA(BaseModel):
     id_comentario: int
     id_publicacion: int
@@ -171,6 +175,22 @@ def get_following(user_name: str):
     
     return following
 
+@app.get("/following/{user_id}")
+def get_following(user_id: int):
+    with driver.session(database="neo4j") as session:
+        query = """
+            MATCH (u:Usuario {id_usuario: $user_id})-[:SIGUE_A]->(f:Usuario)
+            RETURN f.id_usuario AS following_id
+        """
+        result = session.run(query, user_id=user_id)
+        
+        following = [record["following_id"] for record in result]
+        
+        if not following:
+            return {"message": f"El usuario {user_id} no sigue a nadie."}
+        
+        return {"user_id": user_id, "following": following}
+
 @app.get("/recommendations/{user_name}")
 def get_recommendations(user_name: str):
     with driver.session(database="neo4j") as session:
@@ -222,6 +242,8 @@ def create_user(tx, id_usuario, user_name, email, password, is_influencer, age, 
     """
     tx.run(query)
 
+
+
 def get_all_users(tx):
     query = "MATCH (u:Usuario) RETURN u.id_usuario AS id, u.user_name AS user_name, labels(u) AS labels"
     return tx.run(query).data()
@@ -236,7 +258,8 @@ def get_user(tx, user_id: int):
         raise HTTPException(status_code=404, detail="User not found")
     return result[0]
 
-def add_user_properties(tx, user_id: int, properties: dict):
+def add_user_properties(tx, user_id: int, properties: UserCreate):
+    print(properties)
     query = """
     MATCH (u:Usuario {id_usuario: $user_id})
     SET u += $properties
@@ -252,6 +275,41 @@ def update_user_properties(tx, user_id: int, properties: dict):
     """
     tx.run(query, user_id=user_id, properties=properties)
 
+def update_user(tx, user_id, user_name=None, email=None, password=None, is_influencer=None, age=None, profile_pic=None):
+    set_clauses = []
+
+    if user_name is not None:
+        set_clauses.append(f"u.user_name = '{user_name}'")
+    if email is not None:
+        set_clauses.append(f"u.correo = '{email}'")
+    if password is not None:
+        set_clauses.append(f"u.pass = '{password}'")
+    if age is not None:
+        set_clauses.append(f"u.edad = {age}")
+    if profile_pic is not None:
+        set_clauses.append(f"u.foto_de_perfil = '{profile_pic}'")
+
+    # Manejo de la etiqueta `:Influencer`
+    remove_influencer = "REMOVE u:Influencer" if is_influencer is False else ""
+    add_influencer = "SET u:Influencer" if is_influencer is True else ""
+
+    # Si no hay nada que actualizar, lanzar un error
+    if not set_clauses and not is_influencer:
+        raise ValueError("No properties provided for update")
+
+    set_query = ", ".join(set_clauses) if set_clauses else ""
+
+    query = f"""
+    MATCH (u:Usuario {{id_usuario: {user_id}}})
+    {remove_influencer}
+    {add_influencer}
+    {"SET " + set_query if set_query else ""}
+    RETURN u
+    """
+
+    tx.run(query)
+
+
 def delete_user(tx, user_id: int):
     query = "MATCH (u:Usuario {id: $user_id}) DETACH DELETE u"
     tx.run(query, user_id=user_id)
@@ -261,6 +319,9 @@ def delete_all_users(tx):
     tx.run(query)
 
 
+
+# Relations SIGUE_A
+
 def create_relation_sigue_a(tx, id1, id2, notificaciones_activas=False, recomendado_por_algoritmo=False):
     query = """
     MATCH (u1:Usuario {id_usuario: $id1}), (u2:Usuario {id_usuario: $id2})
@@ -268,6 +329,36 @@ def create_relation_sigue_a(tx, id1, id2, notificaciones_activas=False, recomend
     RETURN u1, u2
     """
     tx.run(query, id1=id1, id2=id2, notificaciones_activas=notificaciones_activas, recomendado_por_algoritmo=recomendado_por_algoritmo)
+
+def get_follow_relation(self, id1=None, id2=None):
+        query = """
+        MATCH (u1:Usuario)-[r:SIGUE_A]->(u2:Usuario)
+        WHERE ($id1 IS NULL OR u1.id_usuario = $id1) AND ($id2 IS NULL OR u2.id_usuario = $id2)
+        RETURN u1.id_usuario AS seguidor, u2.id_usuario AS seguido, r
+        """
+        with self.driver.session() as session:
+            result = session.run(query, id1=id1, id2=id2)
+            return result.data()
+        
+def update_follow_relation(tx, id1, id2, notificaciones_activas=None, recomendado_por_algoritmo=None):
+        query = """
+        MATCH (u1:Usuario {id_usuario: $id1})-[r:SIGUE_A]->(u2:Usuario {id_usuario: $id2})
+        SET r.notificaciones_activas = COALESCE($notificaciones_activas, r.notificaciones_activas),
+            r.recomendado_por_algoritmo = COALESCE($recomendado_por_algoritmo, r.recomendado_por_algoritmo)
+        RETURN u1.id_usuario AS seguidor, u2.id_usuario AS seguido, r
+        """
+        result = tx.run(query, id1=id1, id2=id2, notificaciones_activas=notificaciones_activas, recomendado_por_algoritmo=recomendado_por_algoritmo)
+        return result.data()
+
+def delete_follow_relation(tx, id1, id2):
+    query = """
+    MATCH (u1:Usuario {id_usuario: $id1})-[r:SIGUE_A]->(u2:Usuario {id_usuario: $id2})
+    DELETE r
+    RETURN "Relación eliminada entre " + $id1 + " y " + $id2 AS mensaje
+    """
+    result = tx.run(query, id1=id1, id2=id2)
+    return result.data()
+
 
 def create_relation_bloquea(tx, id1, id2):
     query = """
@@ -572,14 +663,76 @@ def create_relation_pertenece_a(tx, id_comentario, id_publicacion):
            id_comentario=id_comentario,
            id_publicacion=id_publicacion)
 
-# ----------------- ENDPOINTS -----------------
+def get_next_user_id(tx):
+    query = """
+    MATCH (u:Usuario)
+    RETURN COALESCE(MAX(u.id_usuario), 0) + 1 AS next_id
+    """
+    result = tx.run(query).single()
+    return result["next_id"]
 
+
+
+# ----------------- ENDPOINTS -----------------
+# id_usuario, user_name, email, password, is_influencer, age, profile_pic
 @app.post("/users/")
 def create_user_api(user: UserCreate):
     with driver.session(database="neo4j") as session:
-        user_id = random.randint(1, 1000)  # Asignar un ID único
-        session.execute_write(create_user, user_id, user.user_name, user.is_influencer)
+        user_id = session.execute_read(get_next_user_id)
+        session.execute_write(create_user, user_id, user.user_name,user.email, user.password,  user.is_influencer, user.age, user.profile_pic)
         return {"message": "Usuario creado", "id_usuario": user_id}
+    
+
+@app.get("/randomIDUsers/")
+def getRandomUsers():
+    with driver.session(database="neo4j") as session:
+        query = """
+            MATCH (u1:Usuario), (u2:Usuario)
+            WHERE u1.id_usuario <> u2.id_usuario
+            AND NOT EXISTS {
+                MATCH (u1)-[:SIGUE_A]->(u2) 
+                UNION
+                MATCH (u2)-[:SIGUE_A]->(u1)
+            }
+            WITH u1, u2
+            ORDER BY rand()
+            LIMIT 1
+            RETURN u1.id_usuario AS user1_id, u2.id_usuario AS user2_id;
+        """
+        result = session.run(query).single()
+        return result
+    
+@app.put("/update/relation/sigue_a")
+def update_follow_relation_api(relation: RelationSIGUEA):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(update_follow_relation, relation.id1, relation.id2, relation.notificaciones_activas, relation.recomendado_por_algoritmo)
+        return {"message": f"Relación actualizada entre {relation.id1} y {relation.id2}"},
+    
+
+@app.get("/check_following/{user1_id}/{user2_id}")
+def check_following(user1_id: int, user2_id: int):
+    with driver.session(database="neo4j") as session:
+        query = """
+            MATCH (u1:Usuario {id_usuario: $user1_id})-[r:SIGUE_A]->(u2:Usuario {id_usuario: $user2_id})
+            RETURN u1.id_usuario AS seguidor, u2.id_usuario AS seguido, TYPE(r) AS relacion, properties(r) AS propiedades
+        """
+        result = session.run(query, user1_id=user1_id, user2_id=user2_id).single()
+
+        if result:
+            return {
+                "seguidor": result["seguidor"],
+                "seguido": result["seguido"],
+                "relacion": result["relacion"],
+                "propiedades": result["propiedades"]
+            }
+        else:
+            return {
+                "seguidor": user1_id,
+                "seguido": user2_id,
+                "relacion": "No hay relación SIGUE_A",
+                "propiedades": None
+            }
+
 
 @app.post("/signup/")
 def signup(user: UserCreate):
@@ -612,11 +765,13 @@ def add_user_properties_api(user_id: int, properties: dict):
         session.execute_write(add_user_properties, user_id, properties)
         return {"message": f"Properties added to user {user_id}", "properties": properties}
     
+# tx, user_id, user_name=None, email=None, password=None, is_influencer=None, age=None, profile_pic=None
 @app.put("/users/{user_id}/update_properties")
-def update_user_properties_api(user_id: int, properties: dict):
+def update_user_properties_api(user: updateUser):
+    print(user)
     with driver.session(database="neo4j") as session:
-        session.execute_write(update_user_properties, user_id, properties)
-        return {"message": f"Properties updated for user {user_id}", "properties": properties}
+        session.execute_write(update_user, user.user_id, user.properties.user_name, user.properties.email, user.properties.password, user.properties.is_influencer, user.properties.age, user.properties.profile_pic)
+        return {"message": f"Properties updated for user {user.user_id}", "properties": user.properties}
 
 @app.delete("/users/{user_id}")
 def delete_user_api(user_id: int):
@@ -644,6 +799,12 @@ def follow_user(relation: RelationSIGUEA):
         return {"message": f"Usuario {relation.id1} ahora sigue a {relation.id2}", 
                 "notificaciones_activas": relation.notificaciones_activas,
                 "recomendado_por_algoritmo": relation.recomendado_por_algoritmo}
+
+@app.post("/relations/unfollow/")
+def unfollow_user(relation: RelationCreate):
+    with driver.session(database="neo4j") as session:
+        session.execute_write(delete_follow_relation, relation.id1, relation.id2)
+        return {"message": f"Usuario {relation.id1} dejó de seguir a {relation.id2}"}
 
 @app.post("/relations/bloquea/")
 def block_user(relation: RelationCreate):
@@ -959,3 +1120,5 @@ def create_pertenece_a_api(rel: RelationPerteneceA):
         )
         return {"message": f"Comentario {rel.id_comentario} pertenece a la publicación {rel.id_publicacion}"}
     
+
+# uvicorn main:app --reload   
