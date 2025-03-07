@@ -120,43 +120,55 @@ def create_publicacion(tx, id_publicacion, texto, fecha, reacciones):
     """
     tx.run(query)
 
-import random
-from datetime import date, timedelta
 
 def create_relation_SIGUE_A(tx):
-    # Obtener todos los usuarios y verificar sus etiquetas
+    # Obtener solo 200 usuarios aleatorios con sus etiquetas
     query = """
     MATCH (u:Usuario)
+
+    WITH u ORDER BY rand() LIMIT 200
     RETURN u.id_usuario AS id_usuario, labels(u) AS labels
     """
     users = tx.run(query).data()
     
+    relaciones = []  # Lista para almacenar las relaciones a crear
+
     for user in users:
         id_usuario = user["id_usuario"]
         labels = user["labels"]
         
-        # Probabilidad diferente si el usuario es Influencer o no
+        # Probabilidad de seguir a otro usuario
         probabilidad_seguir = 0.1 if "Influencer" in labels else 0.3
 
-        # Seleccionar usuarios a seguir
+        # Seleccionar usuarios aleatorios a seguir
         posibles_seguidos = [u["id_usuario"] for u in users if u["id_usuario"] != id_usuario]
-        seguidos = [uid for uid in posibles_seguidos if random.random() < probabilidad_seguir]
+        seguidos = random.sample(posibles_seguidos, min(len(posibles_seguidos), int(len(posibles_seguidos) * probabilidad_seguir)))
 
         for seguido in seguidos:
-            # Generar valores para las propiedades
-            fecha_inicio = f"date('{date.today() - timedelta(days=random.randint(1, 365))}')"  # Fecha aleatoria en el último año
+            fecha_inicio = (date.today() - timedelta(days=random.randint(1, 365))).isoformat()
             notificaciones_activas = random.choice([True, False])
-            recomendado_por_algoritmo = random.choice([True, False])  # Si fue sugerido por el sistema
+            recomendado_por_algoritmo = random.choice([True, False])
 
-            query = f"""
-            MATCH (u1:Usuario {{id_usuario: $id1}}), (u2:Usuario {{id_usuario: $id2}})
-            MERGE (u1)-[:SIGUE_A {{
-                fecha_inicio: {fecha_inicio}, 
-                notificaciones_activas: {notificaciones_activas}, 
-                recomendado_por_algoritmo: {recomendado_por_algoritmo}
-            }}]->(u2)
-            """
-            tx.run(query, id1=id_usuario, id2=seguido)
+            relaciones.append({
+                "id1": id_usuario,
+                "id2": seguido,
+                "fecha_inicio": fecha_inicio,
+                "notificaciones_activas": notificaciones_activas,
+                "recomendado_por_algoritmo": recomendado_por_algoritmo
+            })
+
+    # Crear todas las relaciones en un solo batch de consulta para mejorar el rendimiento
+    query = """
+    UNWIND $relaciones AS rel
+    MATCH (u1:Usuario {id_usuario: rel.id1}), (u2:Usuario {id_usuario: rel.id2})
+    MERGE (u1)-[:SIGUE_A {
+        fecha_inicio: date(rel.fecha_inicio),
+        notificaciones_activas: rel.notificaciones_activas,
+        recomendado_por_algoritmo: rel.recomendado_por_algoritmo
+    }]->(u2)
+    """
+    tx.run(query, relaciones=relaciones)
+
 
 def create_relation_BLOQUEA(tx):
     # Obtener todos los usuarios
@@ -474,17 +486,17 @@ with driver.session(database="neo4j") as session:
     next_publicacionID = session.execute_write(lambda tx: get_next_id(tx, "Publicacion", "id_publicacion"))
     next_comentarioID = session.execute_write(lambda tx: get_next_id(tx, "Comentario", "id_comentario"))
 
-    print("ENTRANDO A CREAR USUARIO")
-    for i in range(1+next_userID, 200+next_userID):
-        nombre = fake.name()
-        isInfluencer = random.random() < 0.3
-        session.execute_write(lambda tx: create_user(tx, i, nombre.replace(" ", ""), isInfluencer))
+    # print("ENTRANDO A CREAR USUARIO")
+    # for i in range(1+next_userID, 200+next_userID):
+    #     nombre = fake.name()
+    #     isInfluencer = random.random() < 0.3
+    #     session.execute_write(lambda tx: create_user(tx, i, nombre.replace(" ", ""), isInfluencer))
 
     users = session.execute_write(getAllUsers)
 
 
     print("ENTRANDO A CREAR RELACIONES")
-    session.execute_write(create_relation_SIGUE_A)
+    # session.execute_write(create_relation_SIGUE_A)
     session.execute_write(create_relation_BLOQUEA)
 
     print("ENTRANDO A MENSAJES")
